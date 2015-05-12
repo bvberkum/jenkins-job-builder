@@ -12,5 +12,5 @@ default:
 	@echo "make [ $(subst $(SPACE), | ,$(T)) ]"
 
 reinstall:
-	sudo pip uninstall jenkins-job-builder
+	sudo pip uninstall -y jenkins-job-builder
 	sudo python setup.py install
