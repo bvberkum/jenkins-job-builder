@@ -283,7 +283,7 @@ def trigger_builds(parser, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`Parameterized Trigger Plugin
     <Parameterized+Trigger+Plugin>`.
 
-    :arg str project: the Jenkins project to trigger
+    :arg list project: the Jenkins project to trigger
     :arg str predefined-parameters:
       key/value pairs to be passed to the job (optional)
     :arg list bool-parameters:
@@ -355,6 +355,12 @@ def trigger_builds(parser, xml_parent, data):
                   (default true)
 
     Examples:
+
+    Basic usage with yaml list of projects.
+
+    .. literalinclude::
+       /../../tests/builders/fixtures/trigger-builds/project-list.yaml
+       :language: yaml
 
     Basic usage with passing svn revision through.
 
@@ -464,7 +470,7 @@ def trigger_builds(parser, xml_parent, data):
                     parameterName = XML.SubElement(params, 'parameterName')
                     parameterName.text = factory['parameter-name']
                 if (factory['factory'] == 'filebuild' or
-                    factory['factory'] == 'binaryfile'):
+                        factory['factory'] == 'binaryfile'):
                     filePattern = XML.SubElement(params, 'filePattern')
                     filePattern.text = factory['file-pattern']
                     noFilesFoundAction = XML.SubElement(
@@ -517,7 +523,11 @@ def trigger_builds(parser, xml_parent, data):
                         'ignore-offline-nodes', True)).lower()
 
         projects = XML.SubElement(tconfig, 'projects')
-        projects.text = project_def['project']
+        if isinstance(project_def['project'], list):
+            projects.text = ",".join(project_def['project'])
+        else:
+            projects.text = project_def['project']
+
         condition = XML.SubElement(tconfig, 'condition')
         condition.text = 'ALWAYS'
         trigger_with_no_params = XML.SubElement(tconfig,
@@ -990,7 +1000,7 @@ def conditional_step(parser, xml_parent, data):
 
             br = XML.SubElement(ctag, 'bestResult')
             br_name = cdata['condition-best']
-            if not br_name in hudson_model.THRESHOLDS:
+            if br_name not in hudson_model.THRESHOLDS:
                 raise JenkinsJobsException(
                     "threshold must be one of %s" %
                     ", ".join(hudson_model.THRESHOLDS.keys()))
@@ -1871,3 +1881,56 @@ def sonar(parser, xml_parent, data):
     XML.SubElement(sonar, 'javaOpts').text = data.get('java-opts', '')
     if 'jdk' in data:
         XML.SubElement(sonar, 'jdk').text = data['jdk']
+
+
+def sonatype_clm(parser, xml_parent, data):
+    """yaml: sonatype-clm
+    Requires the Jenkins :jenkins-wiki:`Sonatype CLM Plugin
+    <Sonatype+CLM+%28formerly+Insight+for+CI%29>`.
+
+    :arg str application-name: Determines the policy elements to associate
+        with this build. (Required)
+    :arg bool fail-on-clm-server-failure: Controls the build outcome if there
+        is a failure in communicating with the CLM server. (Default: false)
+    :arg str stage: Controls the stage the policy evaluation will be run
+        against on the CLM server. Valid stages: build, stage-release, release,
+        operate. (Default: build)
+    :arg str scan-targets: Pattern of files to include for scanning. (optional)
+    :arg str module-excludes: Pattern of files to exclude. (optional)
+    :arg str advanced-options: Options to be set on a case-by-case basis as
+        advised by Sonatype Support. (optional)
+
+    Example:
+
+    .. literalinclude:: /../../tests/builders/fixtures/sonatype-clm01.yaml
+    """
+    clm = XML.SubElement(xml_parent,
+                         'com.sonatype.insight.ci.hudson.PreBuildScan')
+    clm.set('plugin', 'sonatype-clm-ci')
+
+    if 'application-name' not in data:
+        raise MissingAttributeError("application-name",
+                                    "builders.sonatype-clm")
+    XML.SubElement(clm, 'billOfMaterialsToken').text = str(
+        data['application-name'])
+    XML.SubElement(clm, 'failOnClmServerFailures').text = str(
+        data.get('fail-on-clm-server-failure', False)).lower()
+
+    SUPPORTED_STAGES = ['build', 'stage-release', 'release', 'operate']
+    stage = str(data.get('stage', 'build')).lower()
+    if stage not in SUPPORTED_STAGES:
+        raise InvalidAttributeError("stage",
+                                    stage,
+                                    "builders.sonatype-clm",
+                                    SUPPORTED_STAGES)
+    XML.SubElement(clm, 'stageId').text = stage
+
+    # Path Configs
+    path_config = XML.SubElement(clm,
+                                 'pathConfig')
+    XML.SubElement(path_config, 'scanTargets').text = str(
+        data.get('scan-targets', '')).lower()
+    XML.SubElement(path_config, 'moduleExcludes').text = str(
+        data.get('module-excludes', '')).lower()
+    XML.SubElement(path_config, 'scanProperties').text = str(
+        data.get('advanced-options', '')).lower()

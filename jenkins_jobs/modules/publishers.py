@@ -35,6 +35,7 @@ from jenkins_jobs.errors import JenkinsJobsException
 import logging
 import pkg_resources
 import sys
+import six
 import random
 
 
@@ -255,14 +256,14 @@ def trigger_parameterized_builds(parser, xml_parent, data):
                                  'BuildTriggerConfig')
         tconfigs = XML.SubElement(tconfig, 'configs')
         if ('predefined-parameters' in project_def
-            or 'git-revision' in project_def
-            or 'property-file' in project_def
-            or 'current-parameters' in project_def
-            or 'node-parameters' in project_def
-            or 'svn-revision' in project_def
-            or 'restrict-matrix-project' in project_def
-            or 'node-label-name' in project_def
-            or 'node-label' in project_def):
+                or 'git-revision' in project_def
+                or 'property-file' in project_def
+                or 'current-parameters' in project_def
+                or 'node-parameters' in project_def
+                or 'svn-revision' in project_def
+                or 'restrict-matrix-project' in project_def
+                or 'node-label-name' in project_def
+                or 'node-label' in project_def):
 
             if 'predefined-parameters' in project_def:
                 params = XML.SubElement(tconfigs,
@@ -287,12 +288,12 @@ def trigger_parameterized_builds(parser, xml_parent, data):
                 failOnMissing.text = str(project_def.get('fail-on-missing',
                                                          False)).lower()
             if ('current-parameters' in project_def
-                and project_def['current-parameters']):
+                    and project_def['current-parameters']):
                 XML.SubElement(tconfigs,
                                'hudson.plugins.parameterizedtrigger.'
                                'CurrentBuildParameters')
             if ('node-parameters' in project_def
-                and project_def['node-parameters']):
+                    and project_def['node-parameters']):
                 XML.SubElement(tconfigs,
                                'hudson.plugins.parameterizedtrigger.'
                                'NodeParameters')
@@ -301,14 +302,14 @@ def trigger_parameterized_builds(parser, xml_parent, data):
                                'hudson.plugins.parameterizedtrigger.'
                                'SubversionRevisionBuildParameters')
             if ('restrict-matrix-project' in project_def
-                and project_def['restrict-matrix-project']):
+                    and project_def['restrict-matrix-project']):
                 subset = XML.SubElement(tconfigs,
                                         'hudson.plugins.parameterizedtrigger.'
                                         'matrix.MatrixSubsetBuildParameters')
                 XML.SubElement(subset, 'filter').text = \
                     project_def['restrict-matrix-project']
-            if 'node-label-name' in project_def or \
-               'node-label' in project_def:
+            if ('node-label-name' in project_def or
+                    'node-label' in project_def):
                 params = XML.SubElement(tconfigs,
                                         'org.jvnet.jenkins.plugins.'
                                         'nodelabelparameter.'
@@ -1050,23 +1051,22 @@ def violations(parser, xml_parent, data):
     configs = XML.SubElement(config, 'typeConfigs')
     XML.SubElement(configs, 'no-comparator')
 
-    for name in [
-        'checkstyle',
-        'codenarc',
-        'cpd',
-        'cpplint',
-        'csslint',
-        'findbugs',
-        'fxcop',
-        'gendarme',
-        'jcreport',
-        'jslint',
-        'pep8',
-        'perlcritic',
-        'pmd',
-        'pylint',
-        'simian',
-        'stylecop']:
+    for name in ['checkstyle',
+                 'codenarc',
+                 'cpd',
+                 'cpplint',
+                 'csslint',
+                 'findbugs',
+                 'fxcop',
+                 'gendarme',
+                 'jcreport',
+                 'jslint',
+                 'pep8',
+                 'perlcritic',
+                 'pmd',
+                 'pylint',
+                 'simian',
+                 'stylecop']:
         _violations_add_entry(configs, name, data.get(name, {}))
 
     XML.SubElement(config, 'limit').text = '100'
@@ -1396,7 +1396,7 @@ def pipeline(parser, xml_parent, data):
             properties.text = data['predefined-parameters']
 
         if ('current-parameters' in data
-            and data['current-parameters']):
+                and data['current-parameters']):
             XML.SubElement(configs,
                            'hudson.plugins.parameterizedtrigger.'
                            'CurrentBuildParameters')
@@ -1598,7 +1598,7 @@ def email_ext(parser, xml_parent, data):
                    'only-configurations': 'ONLY_CONFIGURATIONS',
                    'only-parent': 'ONLY_PARENT'}
     matrix_trigger = data.get('matrix-trigger', None)
-    ## If none defined, then do not create entry
+    # If none defined, then do not create entry
     if matrix_trigger is not None:
         if matrix_trigger not in matrix_dict:
             raise JenkinsJobsException("matrix-trigger entered is not valid, "
@@ -1805,7 +1805,21 @@ def groovy_postbuild(parser, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`Groovy Postbuild Plugin
     <Groovy+Postbuild+Plugin>`.
 
-    :Parameter: the groovy script to execute
+    Please pay attention on version of plugin you have installed.
+    There were incompatible changes between 1.x and 2.x. Please see
+    :jenkins-wiki:`home page <Groovy+Postbuild+Plugin>` of this plugin
+    for full information including migration process.
+
+    :arg str script: The groovy script to execute
+    :arg list classpath: List of additional classpaths (>=1.6)
+    :arg str on-failure: In case of script failure leave build as it is
+                         for "nothing" option, mark build as unstable
+                         for "unstable" and mark job as failure for "failed"
+                         (default is "nothing")
+    :arg bool matrix-parent: Run script for matrix parent only (>=1.9)
+                             (default false)
+    :arg bool sandbox: Execute script inside of groovy sandbox (>=2.0)
+                       (default false)
 
     Example:
 
@@ -1813,10 +1827,65 @@ def groovy_postbuild(parser, xml_parent, data):
         /../../tests/publishers/fixtures/groovy-postbuild001.yaml
        :language: yaml
     """
-    root_tag = 'org.jvnet.hudson.plugins.groovypostbuild.'\
-        'GroovyPostbuildRecorder'
+    logger = logging.getLogger("%s:groovy-postbuild" % __name__)
+    # Backward compatibility with old format
+    if isinstance(data, six.string_types):
+        logger.warn(
+            "You use depricated configuration, please follow documentation "
+            "to change configuration. It is not going to be supported in "
+            "future releases!"
+        )
+        data = {
+            'script': data,
+        }
+    # There are incompatible changes, we need to know version
+    info = parser.registry.get_plugin_info('groovy-postbuild')
+    version = pkg_resources.parse_version(info.get('version', "0"))
+    # Version specific predicates
+    matrix_parent_support = version >= pkg_resources.parse_version("1.9")
+    security_plugin_support = version >= pkg_resources.parse_version("2.0")
+    extra_classpath_support = version >= pkg_resources.parse_version("1.6")
+
+    root_tag = (
+        'org.jvnet.hudson.plugins.groovypostbuild.GroovyPostbuildRecorder'
+    )
     groovy = XML.SubElement(xml_parent, root_tag)
-    XML.SubElement(groovy, 'groovyScript').text = data
+
+    behavior = data.get('on-failure')
+    XML.SubElement(groovy, 'behavior').text = {
+        'unstable': '1',
+        'failed': '2',
+    }.get(behavior, '0')
+
+    if matrix_parent_support:
+        XML.SubElement(
+            groovy,
+            'runForMatrixParent',
+        ).text = str(data.get('matrix-parent', False)).lower()
+
+    classpaths = data.get('classpath', list())
+    if security_plugin_support:
+        script = XML.SubElement(groovy, 'script')
+        XML.SubElement(script, 'script').text = data.get('script')
+        XML.SubElement(script, 'sandbox').text = str(
+            data.get('sandbox', False)
+        ).lower()
+        if classpaths:
+            classpath = XML.SubElement(script, 'classpath')
+            for path in classpaths:
+                script_path = XML.SubElement(classpath, 'entry')
+                XML.SubElement(script_path, 'url').text = path
+    else:
+        XML.SubElement(groovy, 'groovyScript').text = data.get('script')
+        if extra_classpath_support and classpaths:
+            classpath = XML.SubElement(groovy, 'classpath')
+            for path in classpaths:
+                script_path = XML.SubElement(
+                    classpath,
+                    'org.jvnet.hudson.plugins.groovypostbuild.'
+                    'GroovyScriptPath',
+                )
+                XML.SubElement(script_path, 'path').text = path
 
 
 def base_publish_over(xml_parent, data, console_prefix,
@@ -2774,7 +2843,7 @@ def warnings(parser, xml_parent, data):
     XML.SubElement(warnings, 'canRunOnFailed').text = run_always
     detect_modules = str(data.get('detect-modules', False)).lower()
     XML.SubElement(warnings, 'shouldDetectModules').text = detect_modules
-    #Note the logic reversal (included here to match the GUI)
+    # Note the logic reversal (included here to match the GUI)
     XML.SubElement(warnings, 'doNotResolveRelativePaths').text = \
         str(not data.get('resolve-relative-paths', False)).lower()
     health_threshold_high = str(data.get('health-threshold-high', ''))
@@ -4066,7 +4135,7 @@ def conditional_publisher(parser, xml_parent, data):
 
             br = XML.SubElement(ctag, 'bestResult')
             br_name = cdata['condition-best']
-            if not br_name in hudson_model.THRESHOLDS:
+            if br_name not in hudson_model.THRESHOLDS:
                 raise JenkinsJobsException(
                     "threshold must be one of %s" %
                     ", ".join(hudson_model.THRESHOLDS.keys()))
@@ -4195,6 +4264,23 @@ def scoverage(parser, xml_parent, data):
         data.get('report-directory', ''))
     XML.SubElement(scoverage, 'reportFile').text = str(
         data.get('report-file', ''))
+
+
+def display_upstream_changes(parser, xml_parent, data):
+    """yaml: display-upstream-changes
+    Display SCM changes of upstream jobs. Requires the Jenkins
+    :jenkins-wiki:`Display Upstream Changes Plugin
+    <Display+Upstream+Changes+Plugin>`.
+
+    Example:
+
+    .. literalinclude:: \
+    /../../tests/publishers/fixtures/display-upstream-changes.yaml
+    """
+    XML.SubElement(
+        xml_parent,
+        'jenkins.plugins.displayupstreamchanges.'
+        'DisplayUpstreamChangesRecorder')
 
 
 class Publishers(jenkins_jobs.modules.base.Base):
