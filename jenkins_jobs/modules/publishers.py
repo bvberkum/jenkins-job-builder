@@ -1438,7 +1438,7 @@ def email(parser, xml_parent, data):
     XML.SubElement(mailer, 'recipients').text = data.get('recipients', '')
 
     # Note the logic reversal (included here to match the GUI
-    if data.get('notify-every-unstable-build', True).lower() == 'true':
+    if data.get('notify-every-unstable-build', True):
         XML.SubElement(mailer, 'dontNotifyEveryUnstableBuild').text = 'false'
     else:
         XML.SubElement(mailer, 'dontNotifyEveryUnstableBuild').text = 'true'
