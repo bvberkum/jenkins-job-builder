@@ -90,12 +90,12 @@ Example:
 
 """
 
-import codecs
 try:
     from collections import OrderedDict
 except ImportError:
     from ordereddict import OrderedDict
 import functools
+import io
 import logging
 import re
 import os
@@ -183,30 +183,30 @@ class LocalLoader(OrderedConstructor, LocalAnchorLoader):
 
         # use the load function provided in this module
         import local_yaml
-        data = local_yaml.load(open(fn))
+        data = local_yaml.load(io.open(fn, 'r', encoding='utf-8'))
 
 
         # Loading by providing the alternate class to the default yaml load
         from local_yaml import LocalLoader
-        data = yaml.load(open(fn), LocalLoader)
+        data = yaml.load(io.open(fn, 'r', encoding='utf-8'), LocalLoader)
 
         # Loading with a search path
         from local_yaml import LocalLoader
         import functools
-        data = yaml.load(open(fn), functools.partial(LocalLoader,
-                        search_path=['path']))
+        data = yaml.load(io.open(fn, 'r', encoding='utf-8'),
+                         functools.partial(LocalLoader, search_path=['path']))
 
     """
 
     def __init__(self, *args, **kwargs):
         # make sure to pop off any local settings before passing to
         # the parent constructor as any unknown args may cause errors.
-        self.search_path = set()
+        self.search_path = list()
         if 'search_path' in kwargs:
             for p in kwargs.pop('search_path'):
                 logger.debug("Adding '{0}' to search path for include tags"
                              .format(p))
-                self.search_path.add(os.path.normpath(p))
+                self.search_path.append(os.path.normpath(p))
 
         if 'escape_callback' in kwargs:
             self._escape = kwargs.pop('escape_callback')
@@ -228,22 +228,22 @@ class LocalLoader(OrderedConstructor, LocalAnchorLoader):
                              type(self).construct_yaml_map)
 
         if hasattr(self.stream, 'name'):
-            self.search_path.add(os.path.normpath(
+            self.search_path.append(os.path.normpath(
                 os.path.dirname(self.stream.name)))
-        self.search_path.add(os.path.normpath(os.path.curdir))
+        self.search_path.append(os.path.normpath(os.path.curdir))
 
     def _find_file(self, filename):
         for dirname in self.search_path:
             candidate = os.path.expanduser(os.path.join(dirname, filename))
             if os.path.isfile(candidate):
-                logger.info("Including file '{0}' from path '{0}'"
+                logger.info("Including file '{0}' from path '{1}'"
                             .format(filename, dirname))
                 return candidate
         return filename
 
     def _include_tag(self, loader, node):
         filename = self._find_file(loader.construct_yaml_str(node))
-        with open(filename, 'r') as f:
+        with io.open(filename, 'r', encoding='utf-8') as f:
             data = yaml.load(f, functools.partial(LocalLoader,
                                                   search_path=self.search_path
                                                   ))
@@ -252,7 +252,7 @@ class LocalLoader(OrderedConstructor, LocalAnchorLoader):
     def _include_raw_tag(self, loader, node):
         filename = self._find_file(loader.construct_yaml_str(node))
         try:
-            with codecs.open(filename, 'r', 'utf-8') as f:
+            with io.open(filename, 'r', encoding='utf-8') as f:
                 data = f.read()
         except:
             logger.error("Failed to include file using search path: '{0}'"

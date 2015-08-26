@@ -14,13 +14,13 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-import mock
 
 import jenkins_jobs.builder
-
+from tests.base import mock
 from testtools import TestCase
 
 
+@mock.patch('jenkins_jobs.builder.CacheStorage', mock.MagicMock)
 class TestCaseTestBuilder(TestCase):
     def setUp(self):
         self.builder = jenkins_jobs.builder.Builder(

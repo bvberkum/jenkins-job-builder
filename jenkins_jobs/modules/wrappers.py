@@ -24,10 +24,17 @@ Wrappers can alter the way the build is run as well as the build output.
 
 import logging
 import xml.etree.ElementTree as XML
+import pkg_resources
 import jenkins_jobs.modules.base
-from jenkins_jobs.errors import JenkinsJobsException
+from jenkins_jobs.errors import (JenkinsJobsException,
+                                 InvalidAttributeError,
+                                 MissingAttributeError)
 from jenkins_jobs.modules.builders import create_builders
 from jenkins_jobs.modules.helpers import config_file_provider_builder
+
+logger = logging.getLogger(__name__)
+
+MIN_TO_SEC = 60
 
 
 def ci_skip(parser, xml_parent, data):
@@ -129,50 +136,153 @@ def timeout(parser, xml_parent, data):
     <Build-timeout+Plugin>`.
 
     :arg bool fail: Mark the build as failed (default false)
+    :arg bool abort: Mark the build as aborted (default false)
     :arg bool write-description: Write a message in the description
         (default false)
     :arg int timeout: Abort the build after this number of minutes (default 3)
     :arg str timeout-var: Export an environment variable to reference the
         timeout value (optional)
     :arg str type: Timeout type to use (default absolute)
-    :arg int elastic-percentage: Percentage of the three most recent builds
-        where to declare a timeout (default 0)
-    :arg int elastic-default-timeout: Timeout to use if there were no previous
-        builds (default 3)
-
     :type values:
-     * **likely-stuck**
-     * **elastic**
-     * **absolute**
+        * **likely-stuck**
+        * **no-activity**
+        * **elastic**
+        * **absolute**
 
-    Example:
+    :arg int elastic-percentage: Percentage of the three most recent builds
+        where to declare a timeout, only applies to **elastic** type.
+        (default 0)
+    :arg int elastic-number-builds: Number of builds to consider computing
+        average duration, only applies to **elastic** type. (default 3)
+    :arg int elastic-default-timeout: Timeout to use if there were no previous
+        builds, only applies to **elastic** type. (default 3)
 
-    .. literalinclude:: /../../tests/wrappers/fixtures/timeout001.yaml
+    Example (Version < 1.14):
 
-    .. literalinclude:: /../../tests/wrappers/fixtures/timeout002.yaml
+    .. literalinclude:: /../../tests/wrappers/fixtures/timeout/timeout001.yaml
 
-    .. literalinclude:: /../../tests/wrappers/fixtures/timeout003.yaml
+    .. literalinclude:: /../../tests/wrappers/fixtures/timeout/timeout002.yaml
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/timeout/timeout003.yaml
+
+    Example (Version >= 1.14):
+
+    .. literalinclude::
+        /../../tests/wrappers/fixtures/timeout/version-1.14/absolute001.yaml
+
+    .. literalinclude::
+        /../../tests/wrappers/fixtures/timeout/version-1.14/no-activity001.yaml
+
+    .. literalinclude::
+        /../../tests/wrappers/fixtures/timeout/version-1.14/likely-stuck001.yaml
+
+    .. literalinclude::
+        /../../tests/wrappers/fixtures/timeout/version-1.14/elastic001.yaml
+
     """
-    twrapper = XML.SubElement(xml_parent,
-                              'hudson.plugins.build__timeout.'
-                              'BuildTimeoutWrapper')
-    XML.SubElement(twrapper, 'timeoutMinutes').text = str(
-        data.get('timeout', 3))
-    timeout_env_var = data.get('timeout-var')
-    if timeout_env_var:
-        XML.SubElement(twrapper, 'timeoutEnvVar').text = str(timeout_env_var)
-    XML.SubElement(twrapper, 'failBuild').text = str(
-        data.get('fail', 'false')).lower()
-    XML.SubElement(twrapper, 'writingDescription').text = str(
-        data.get('write-description', 'false')).lower()
-    XML.SubElement(twrapper, 'timeoutPercentage').text = str(
-        data.get('elastic-percentage', 0))
-    XML.SubElement(twrapper, 'timeoutMinutesElasticDefault').text = str(
-        data.get('elastic-default-timeout', 3))
-    tout_type = str(data.get('type', 'absolute')).lower()
-    if tout_type == 'likely-stuck':
-        tout_type = 'likelyStuck'
-    XML.SubElement(twrapper, 'timeoutType').text = tout_type
+    prefix = 'hudson.plugins.build__timeout.'
+    twrapper = XML.SubElement(xml_parent, prefix + 'BuildTimeoutWrapper')
+
+    plugin_info = parser.registry.get_plugin_info(
+        "Jenkins build timeout plugin")
+    version = pkg_resources.parse_version(plugin_info.get("version", "0"))
+
+    valid_strategies = ['absolute', 'no-activity', 'likely-stuck', 'elastic']
+
+    if version >= pkg_resources.parse_version("1.14"):
+        strategy = data.get('type', 'absolute')
+        if strategy not in valid_strategies:
+            InvalidAttributeError('type', strategy, valid_strategies)
+
+        if strategy == "absolute":
+            strategy_element = XML.SubElement(
+                twrapper, 'strategy',
+                {'class': "hudson.plugins.build_timeout."
+                          "impl.AbsoluteTimeOutStrategy"})
+            XML.SubElement(strategy_element, 'timeoutMinutes'
+                           ).text = str(data.get('timeout', 3))
+        elif strategy == "no-activity":
+            strategy_element = XML.SubElement(
+                twrapper, 'strategy',
+                {'class': "hudson.plugins.build_timeout."
+                          "impl.NoActivityTimeOutStrategy"})
+            timeout_sec = int(data.get('timeout', 3)) * MIN_TO_SEC
+            XML.SubElement(strategy_element,
+                           'timeoutSecondsString').text = str(timeout_sec)
+        elif strategy == "likely-stuck":
+            strategy_element = XML.SubElement(
+                twrapper, 'strategy',
+                {'class': "hudson.plugins.build_timeout."
+                          "impl.LikelyStuckTimeOutStrategy"})
+            XML.SubElement(strategy_element,
+                           'timeoutMinutes').text = str(data.get('timeout', 3))
+        elif strategy == "elastic":
+            strategy_element = XML.SubElement(
+                twrapper, 'strategy',
+                {'class': "hudson.plugins.build_timeout."
+                          "impl.ElasticTimeOutStrategy"})
+            XML.SubElement(strategy_element, 'timeoutPercentage'
+                           ).text = str(data.get('elastic-percentage', 0))
+            XML.SubElement(strategy_element, 'numberOfBuilds'
+                           ).text = str(data.get('elastic-number-builds', 0))
+            XML.SubElement(strategy_element, 'timeoutMinutesElasticDefault'
+                           ).text = str(data.get('elastic-default-timeout', 3))
+
+        actions = []
+
+        for action in ['fail', 'abort']:
+            if str(data.get(action, 'false')).lower() == 'true':
+                actions.append(action)
+
+        # Set the default action to "abort"
+        if len(actions) == 0:
+            actions.append("abort")
+
+        description = data.get('write-description', None)
+        if description is not None:
+            actions.append('write-description')
+
+        operation_list = XML.SubElement(twrapper, 'operationList')
+
+        for action in actions:
+            fmt_str = prefix + "operations.{0}Operation"
+            if action == "abort":
+                XML.SubElement(operation_list, fmt_str.format("Abort"))
+            elif action == "fail":
+                XML.SubElement(operation_list, fmt_str.format("Fail"))
+            elif action == "write-description":
+                write_description = XML.SubElement(
+                    operation_list, fmt_str.format("WriteDescription"))
+                XML.SubElement(write_description, "description"
+                               ).text = description
+            else:
+                raise JenkinsJobsException("Unsupported BuiltTimeoutWrapper "
+                                           "plugin action: {0}".format(action))
+        timeout_env_var = data.get('timeout-var')
+        if timeout_env_var:
+            XML.SubElement(twrapper,
+                           'timeoutEnvVar').text = str(timeout_env_var)
+    else:
+        XML.SubElement(twrapper,
+                       'timeoutMinutes').text = str(data.get('timeout', 3))
+        timeout_env_var = data.get('timeout-var')
+        if timeout_env_var:
+            XML.SubElement(twrapper,
+                           'timeoutEnvVar').text = str(timeout_env_var)
+        XML.SubElement(twrapper, 'failBuild'
+                       ).text = str(data.get('fail', 'false')).lower()
+        XML.SubElement(twrapper, 'writingDescription'
+                       ).text = str(data.get('write-description', 'false')
+                                    ).lower()
+        XML.SubElement(twrapper, 'timeoutPercentage'
+                       ).text = str(data.get('elastic-percentage', 0))
+        XML.SubElement(twrapper, 'timeoutMinutesElasticDefault'
+                       ).text = str(data.get('elastic-default-timeout', 3))
+
+        tout_type = str(data.get('type', 'absolute')).lower()
+        if tout_type == 'likely-stuck':
+            tout_type = 'likelyStuck'
+        XML.SubElement(twrapper, 'timeoutType').text = tout_type
 
 
 def timestamps(parser, xml_parent, data):
@@ -214,6 +324,34 @@ def ansicolor(parser, xml_parent, data):
     colormap = data.get('colormap')
     if colormap:
         XML.SubElement(cwrapper, 'colorMapName').text = colormap
+
+
+def live_screenshot(parser, xml_parent, data):
+    """yaml: live-screenshot
+    Show live screenshots of running jobs in the job list.
+    Requires the Jenkins :jenkins-wiki:`Live-Screenshot Plugin
+    <LiveScreenshot+Plugin>`.
+
+    :arg str full-size: name of screenshot file (default 'screenshot.png')
+    :arg str thumbnail: name of thumbnail file (default 'screenshot-thumb.png')
+
+    File type must be .png and they must be located inside the $WORKDIR.
+
+    Example using defaults:
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/live_screenshot001.yaml
+
+    or specifying the files to use:
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/live_screenshot002.yaml
+    """
+    live = XML.SubElement(
+        xml_parent,
+        'org.jenkinsci.plugins.livescreenshot.LiveScreenshotBuildWrapper')
+    XML.SubElement(live, 'fullscreenFilename').text = data.get(
+        'full-size', 'screenshot.png')
+    XML.SubElement(live, 'thumbnailFilename').text = data.get(
+        'thumbnail', 'screenshot-thumb.png')
 
 
 def mask_passwords(parser, xml_parent, data):
@@ -1212,14 +1350,24 @@ def credentials_binding(parser, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`Credentials Binding Plugin
     <Credentials+Binding+Plugin>` version 1.1 or greater.
 
-    :arg list binding-type: List of each bindings to create.  Bindings may be\
-                            of type `zip-file`, `file`, `username-password`,\
-                            or `text`
+    :arg list binding-type: List of each bindings to create.  Bindings may be
+      of type `zip-file`, `file`, `username-password`, `text` or
+      `username-password-separated`.
+      username-password sets a variable to the username and password given in
+      the credentials, separated by a colon.
+      username-password-separated sets one variable to the username and one
+      variable to the password given in the credentials.
 
-        :Parameters: * **credential-id** (`str`) UUID of the credential being\
-                                                 referenced
-                     * **variable** (`str`) Environment variable where the\
-                                            credential will be stored
+        :Parameters: * **credential-id** (`str`) UUID of the credential being
+                       referenced
+                     * **variable** (`str`) Environment variable where the
+                       credential will be stored
+                     * **username** (`str`) Environment variable for the
+                       username (Required for binding-type
+                       username-password-separated)
+                     * **password** (`str`) Environment variable for the
+                       password (Required for binding-type
+                       username-password-separated)
 
     Example:
 
@@ -1238,6 +1386,9 @@ def credentials_binding(parser, xml_parent, data):
         'file': 'org.jenkinsci.plugins.credentialsbinding.impl.FileBinding',
         'username-password': 'org.jenkinsci.plugins.credentialsbinding.impl.'
                              'UsernamePasswordBinding',
+        'username-password-separated': 'org.jenkinsci.plugins.'
+                                       'credentialsbinding.impl.'
+                                       'UsernamePasswordMultiBinding',
         'text': 'org.jenkinsci.plugins.credentialsbinding.impl.StringBinding'
     }
     if not data:
@@ -1252,8 +1403,17 @@ def credentials_binding(parser, xml_parent, data):
 
             binding_xml = XML.SubElement(bindings_xml,
                                          binding_types[binding_type])
-            variable_xml = XML.SubElement(binding_xml, 'variable')
-            variable_xml.text = params.get('variable')
+            if binding_type == 'username-password-separated':
+                try:
+                    XML.SubElement(binding_xml, 'usernameVariable'
+                                   ).text = params['username']
+                    XML.SubElement(binding_xml, 'passwordVariable'
+                                   ).text = params['password']
+                except KeyError as e:
+                    raise MissingAttributeError(e.args[0])
+            else:
+                variable_xml = XML.SubElement(binding_xml, 'variable')
+                variable_xml.text = params.get('variable')
             credential_xml = XML.SubElement(binding_xml, 'credentialsId')
             credential_xml.text = params.get('credential-id')
 
@@ -1420,6 +1580,92 @@ def buildaliassetter(parser, xml_parent, data):
                 'org.jenkinsci.plugins.buildaliassetter.TokenMacroAliasProvider')
         template = XML.SubElement(TokenMacroAliasProvider, 'template')
         template.text = str(alias)
+
+
+def android_emulator(parser, xml_parent, data):
+    """yaml: android-emulator
+    Automates many Android development tasks including SDK installation,
+    build file generation, emulator creation and launch,
+    APK (un)installation...
+    Requires the Jenkins :jenkins-wiki:`Android Emulator Plugin
+    <Android+Emulator+Plugin>`.
+
+    :arg str avd: Enter the name of an existing Android emulator configuration.
+        If this is exclusive with the 'os' arg.
+    :arg str os: Can be an OS version, target name or SDK add-on
+    :arg str screen-density: Density in dots-per-inch (dpi) or as an alias,
+        e.g. "160" or "mdpi". (default mdpi)
+    :arg str screen-resolution: Can be either a named resolution or explicit
+        size, e.g. "WVGA" or "480x800". (default WVGA)
+    :arg str locale: Language and country pair. (default en_US)
+    :arg str target-abi: Name of the ABI / system image to be used. (optional)
+    :arg str sd-card: sd-card size e.g. "32M" or "10240K". (optional)
+    :arg bool wipe: if true, the emulator will have its user data reset at
+        start-up (default false)
+    :arg bool show-window: if true, the Android emulator user interface will
+        be displayed on screen during the build. (default false)
+    :arg bool snapshot: Start emulator from stored state (default false)
+    :arg bool delete: Delete Android emulator at the end of build
+        (default false)
+    :arg int startup-delay: Wait this many seconds before attempting
+        to start the emulator (default 0)
+    :arg str commandline-options: Will be given when starting the
+        Android emulator executable (optional)
+    :arg str exe: The emulator executable. (optional)
+    :arg list hardware-properties: Dictionary of hardware properties. Allows
+        you to override the default values for an AVD. (optional)
+
+    Example:
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/android003.yaml
+    """
+    root = XML.SubElement(xml_parent,
+                          'hudson.plugins.android__emulator.AndroidEmulator')
+
+    if data.get('avd') and data.get('os'):
+        raise JenkinsJobsException("'avd' and 'os' options are "
+                                   "exclusive, please pick one only")
+
+    if not data.get('avd') and not data.get('os'):
+        raise JenkinsJobsException("AndroidEmulator requires an AVD name or"
+                                   "OS version to run: specify 'os' or 'avd'")
+
+    if data.get('avd'):
+        XML.SubElement(root, 'avdName').text = str(data['avd'])
+
+    if data.get('os'):
+        XML.SubElement(root, 'osVersion').text = str(data['os'])
+        XML.SubElement(root, 'screenDensity').text = str(
+            data.get('screen-density', 'mdpi'))
+        XML.SubElement(root, 'screenResolution').text = str(
+            data.get('screen-resolution', 'WVGA'))
+        XML.SubElement(root, 'deviceLocale').text = str(
+            data.get('locale', 'en_US'))
+        XML.SubElement(root, 'targetAbi').text = str(
+            data.get('target-abi', ''))
+        XML.SubElement(root, 'sdCardSize').text = str(data.get('sd-card', ''))
+
+    hardware = XML.SubElement(root, 'hardwareProperties')
+    for prop_name, prop_val in data.get('hardware-properties', {}).items():
+        prop_node = XML.SubElement(hardware,
+                                   'hudson.plugins.android__emulator'
+                                   '.AndroidEmulator_-HardwareProperty')
+        XML.SubElement(prop_node, 'key').text = str(prop_name)
+        XML.SubElement(prop_node, 'value').text = str(prop_val)
+
+    XML.SubElement(root, 'wipeData').text = str(
+        data.get('wipe', False)).lower()
+    XML.SubElement(root, 'showWindow').text = str(
+        data.get('show-window', False)).lower()
+    XML.SubElement(root, 'useSnapshots').text = str(
+        data.get('snapshot', False)).lower()
+    XML.SubElement(root, 'deleteAfterBuild').text = str(
+        data.get('delete', False)).lower()
+    XML.SubElement(root, 'startupDelay').text = str(
+        data.get('startup-delay', 0))
+    XML.SubElement(root, 'commandLineOptions').text = str(
+        data.get('commandline-options', ''))
+    XML.SubElement(root, 'executable').text = str(data.get('exe', ''))
 
 
 class Wrappers(jenkins_jobs.modules.base.Base):
