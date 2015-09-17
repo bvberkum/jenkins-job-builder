@@ -35,7 +35,8 @@ import xml.etree.ElementTree as XML
 import jenkins_jobs.modules.base
 from jenkins_jobs.modules import hudson_model
 from jenkins_jobs.errors import (InvalidAttributeError,
-                                 JenkinsJobsException)
+                                 JenkinsJobsException,
+                                 MissingAttributeError)
 import logging
 import re
 try:
@@ -351,6 +352,15 @@ def gerrit(parser, xml_parent, data):
                               * **pattern** (`str`) -- File path pattern to
                                 match
 
+                * **forbidden-file-paths** (`list`) -- List of file paths to
+                  skip triggering (optional)
+
+                  :Forbidden File Path: * **compare-type** (`str`) --
+                                ''PLAIN'', ''ANT'' or ''REG_EXP'' (optional)
+                                (default ''PLAIN'')
+                              * **pattern** (`str`) -- File path pattern to
+                                match
+
                 * **topics** (`list`) -- List of topics to match
                   (optional)
 
@@ -486,6 +496,20 @@ def gerrit(parser, xml_parent, data):
                     'compare-type', file_path.get('compare-type', 'PLAIN'))
                 XML.SubElement(fp_tag, 'pattern').text = file_path['pattern']
 
+        project_forbidden_file_paths = project.get('forbidden-file-paths', [])
+        if project_forbidden_file_paths:
+            ffps_tag = XML.SubElement(gproj, 'forbiddenFilePaths')
+            for forbidden_file_path in project_forbidden_file_paths:
+                ffp_tag = XML.SubElement(ffps_tag,
+                                         'com.sonyericsson.hudson.plugins.'
+                                         'gerrit.trigger.hudsontrigger.data.'
+                                         'FilePath')
+                XML.SubElement(ffp_tag, 'compareType').text = get_compare_type(
+                    'compare-type', forbidden_file_path.get('compare-type',
+                                                            'PLAIN'))
+                XML.SubElement(ffp_tag, 'pattern').text = \
+                    forbidden_file_path['pattern']
+
         topics = project.get('topics', [])
         if topics:
             topics_tag = XML.SubElement(gproj, 'topics')
@@ -576,16 +600,44 @@ def pollscm(parser, xml_parent, data):
     """yaml: pollscm
     Poll the SCM to determine if there has been a change.
 
-    :arg string pollscm: the polling interval (cron syntax)
+    :Parameter: the polling interval (cron syntax)
+
+    .. deprecated:: 1.3.0. Please use :ref:`cron <cron>`.
+
+    .. _cron:
+
+    :arg string cron: the polling interval (cron syntax, required)
+    :arg bool ignore-post-commit-hooks: Ignore changes notified by SCM
+        post-commit hooks. The subversion-plugin supports this since
+        version 1.44. (default false)
 
     Example:
 
-    .. literalinclude:: /../../tests/triggers/fixtures/pollscm001.yaml
+    .. literalinclude:: /../../tests/triggers/fixtures/pollscm002.yaml
        :language: yaml
     """
 
+    try:
+        cron = data['cron']
+        ipch = str(data.get('ignore-post-commit-hooks', False)).lower()
+    except KeyError as e:
+        # ensure specific error on the attribute not being set is raised
+        # for new format
+        raise MissingAttributeError(e)
+    except TypeError:
+        # To keep backward compatibility
+        logger.warn("Your pollscm usage is deprecated, please use"
+                    " the syntax described in the documentation"
+                    " instead")
+        cron = data
+        ipch = 'false'
+
+    if not cron:
+        raise InvalidAttributeError('cron', cron)
+
     scmtrig = XML.SubElement(xml_parent, 'hudson.triggers.SCMTrigger')
-    XML.SubElement(scmtrig, 'spec').text = data
+    XML.SubElement(scmtrig, 'spec').text = cron
+    XML.SubElement(scmtrig, 'ignorePostCommitHooks').text = ipch
 
 
 def build_pollurl_content_type(xml_parent, entries, prefix,
@@ -717,6 +769,21 @@ def timed(parser, xml_parent, data):
     """
     scmtrig = XML.SubElement(xml_parent, 'hudson.triggers.TimerTrigger')
     XML.SubElement(scmtrig, 'spec').text = data
+
+
+def bitbucket(parser, xml_parent, data):
+    """yaml: bitbucket
+    Trigger a job when bitbucket repository is pushed to.
+    Requires the Jenkins :jenkins-wiki:`BitBucket Plugin
+    <BitBucket+Plugin>`.
+
+    Example:
+
+    .. literalinclude:: /../../tests/triggers/fixtures/bitbucket.yaml
+    """
+    bbtrig = XML.SubElement(xml_parent, 'com.cloudbees.jenkins.'
+                            'plugins.BitBucketTrigger')
+    XML.SubElement(bbtrig, 'spec').text = ''
 
 
 def github(parser, xml_parent, data):
@@ -949,6 +1016,49 @@ def reverse(parser, xml_parent, data):
         hudson_model.THRESHOLDS[result]['color']
     XML.SubElement(threshold, 'completeBuild').text = \
         str(hudson_model.THRESHOLDS[result]['complete']).lower()
+
+
+def monitor_folders(parser, xml_parent, data):
+    """yaml: monitor-folders
+    Configure Jenkins to monitor folders.
+    Requires the Jenkins :jenkins-wiki:`Filesystem Trigger Plugin
+    <FSTriggerPlugin>`.
+
+    :arg str path: Folder path to poll. (optional)
+    :arg list includes: Fileset includes setting that specifies the list of
+      includes files. Basedir of the fileset is relative to the workspace
+      root. If no value is set, all files are used. (optional)
+    :arg str excludes: The 'excludes' pattern. A file that matches this mask
+      will not be polled even if it matches the mask specified in 'includes'
+      section. (optional)
+    :arg bool check-modification-date: Check last modification date.
+      (default true)
+    :arg bool check-content: Check content. (default true)
+    :arg bool check-fewer: Check fewer or more files (default true)
+    :arg str cron: cron syntax of when to run (default '')
+
+    Example:
+
+    .. literalinclude:: /../../tests/triggers/fixtures/monitor_folders.yaml
+    """
+    ft = XML.SubElement(xml_parent, ('org.jenkinsci.plugins.fstrigger.'
+                                     'triggers.FolderContentTrigger'))
+    path = data.get('path')
+    if path:
+        XML.SubElement(ft, 'path').text = path
+    includes = data.get('includes')
+    if includes:
+        XML.SubElement(ft, 'includes').text = ",".join(includes)
+    excludes = data.get('excludes')
+    if excludes:
+        XML.SubElement(ft, 'excludes').text = excludes
+    XML.SubElement(ft, 'spec').text = data.get('cron', '')
+    XML.SubElement(ft, 'excludeCheckLastModificationDate').text = str(
+        not data.get('check-modification-date', True)).lower()
+    XML.SubElement(ft, 'excludeCheckContent').text = str(
+        not data.get('check-content', True)).lower()
+    XML.SubElement(ft, 'excludeCheckFewerOrMoreFiles').text = str(
+        not data.get('check-fewer', True)).lower()
 
 
 def ivy(parser, xml_parent, data):
