@@ -52,6 +52,8 @@ class CacheStorage(object):
         else:
             with io.open(self.cachefilename, 'r', encoding='utf-8') as yfile:
                 self.data = yaml.load(yfile)
+            if not self.data:
+                self.data = {}
         logger.debug("Using cache: '{0}'".format(self.cachefilename))
 
     @staticmethod
