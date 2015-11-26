@@ -18,18 +18,18 @@
     disabled: false
     node: master
 
-    display-name: 'Jenkins Job Builder [openstack master]'
+    display-name: 'Jenkins Job Builder [openstack]'
     description: "OpenStack's Jenkins Job Builder [JJB], test run and coverage report."
-    project-src: '*.{cfg,py,rst,ini},{jenkins_jobs,tests,tools}/**'
 
     logrotate:
       daysToKeep: -1
-      numToKeep: 1
+      numToKeep: 20
       artifactDaysToKeep: -1
       artifactNumToKeep: -1
 
     triggers:
-    - timed: "H/5 * * * *"
+    - pollscm:
+        cron: "H/5 * * * *"
 
     scm:
     - git:
@@ -42,7 +42,6 @@
         - 'origin/master'
 
     builders:
-    - shell: tox -e py27
     - shell: tox -e cover
 
     wrappers:
@@ -58,7 +57,7 @@
             <componentName>jenkins-job-builder</componentName>
             <buildNumber>${BUILD_NUMBER}</buildNumber>
             <buildJob>${JOB_NAME}</buildJob>
-            <packageName>#${BUILD_NUMBER} [openstack master]</packageName>
+            <packageName>#${BUILD_NUMBER} [openstack]</packageName>
             <data/>
             <addColumns>false</addColumns>
           </org.jenkinsci.plugins.environmentdashboard.DashboardBuilder>
@@ -67,7 +66,7 @@
 
     # detect errors and warnings and adjust build result accordingly
     - logparser:
-        parse-rules: '$JENKINS_HOME/log-parser-rules.txt'
+        parse-rules: '/var/lib/jenkins/log-rules.txt'
         unstable-on-warning: true
         fail-on-error: true
 
@@ -143,7 +142,7 @@
             <low>XXX</low>
             <ignoreCase>false</ignoreCase>
             <asRegexp>false</asRegexp>
-            <pattern>{project-src}</pattern>
+            <pattern>*.{cfg,py,rst,ini},{jenkins_jobs,tests,tools}/**</pattern>
             <excludePattern/>
           </hudson.plugins.tasks.TasksPublisher>
 
@@ -178,7 +177,6 @@
 
     display-name: 'Jenkins Job Builder [brix]'
     description: "Brix fork of Jenkins Job Builder [JJB], test run and coverage report."
-    project-src: '*.{cfg,py,rst,ini},{jenkins_jobs,tests,tools}/**'
 
     logrotate:
       daysToKeep: -1
@@ -187,7 +185,8 @@
       artifactNumToKeep: -1
 
     triggers:
-    - timed: "H/5 * * * *"
+    - pollscm:
+        cron: "H/5 * * * *"
 
     scm:
     - git:
@@ -197,7 +196,6 @@
         - 'origin/brix'
 
     builders:
-    - shell: tox -e py27
     - shell: tox -e cover
 
     wrappers:
@@ -222,7 +220,7 @@
 
     # detect errors and warnings and adjust build result accordingly
     - logparser:
-        parse-rules: '$JENKINS_HOME/log-parser-rules.txt'
+        parse-rules: '/var/lib/jenkins/log-rules.txt'
         unstable-on-warning: true
         fail-on-error: true
 
@@ -298,7 +296,7 @@
             <low>XXX</low>
             <ignoreCase>false</ignoreCase>
             <asRegexp>false</asRegexp>
-            <pattern>{project-src}</pattern>
+            <pattern>*.{cfg,py,rst,ini},{jenkins_jobs,tests,tools}/**</pattern>
             <excludePattern/>
           </hudson.plugins.tasks.TasksPublisher>
 
@@ -312,7 +310,7 @@
         xml:
           <hudson.plugins.ws__cleanup.WsCleanup plugin="ws-cleanup@0.28">
             <deleteDirs>false</deleteDirs>
-            <skipWhenFailed>false</skipWhenFailed>
+            <skipWhenFailed>true</skipWhenFailed>
             <cleanWhenSuccess>true</cleanWhenSuccess>
             <cleanWhenUnstable>true</cleanWhenUnstable>
             <cleanWhenFailure>true</cleanWhenFailure>
