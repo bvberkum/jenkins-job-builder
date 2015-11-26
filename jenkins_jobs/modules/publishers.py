@@ -5404,3 +5404,78 @@ class Publishers(jenkins_jobs.modules.base.Base):
 
         for action in data.get('publishers', []):
             self.registry.dispatch('publisher', parser, publishers, action)
+
+
+def task_scanner(parser, xml_parent, data):
+    """yaml: task-scanner
+
+    :arg str pattern:
+    :arg str excludePattern:
+    :arg can-run-on-failed:
+    :arg use-stable-build-as-reference:
+    :arg use-delta-values:
+
+    `Task Scanner Plugin
+    <https://wiki.jenkins-ci.org/display/JENKINS/Task+Scanner+Plugin>`_
+    """
+
+    task_scanner = XML.SubElement(xml_parent,
+                           'hudson.plugins.tasks.TasksPublisher')
+
+    XML.SubElement(task_scanner, 'healthy').text = data.get('healthy', '')
+    XML.SubElement(task_scanner, 'unHealthy').text = data.get('unhealthy', '')
+    XML.SubElement(task_scanner, 'thresholdLimit').text = data.get('threshold-limit', 'low')
+    XML.SubElement(task_scanner, 'defaultEncoding').text = data.get('default-encoding', '')
+    XML.SubElement(task_scanner, 'canRunOnFailed').text = str(data.get('can-run-on-failed', False)).lower()
+    XML.SubElement(task_scanner, 'useStableBuildAsReference').text = str(data.get('use-stable-build-as-reference', False)).lower()
+    XML.SubElement(task_scanner, 'useDeltaValues').text = str(data.get('use-delta-values', False)).lower()
+    XML.SubElement(task_scanner, 'shouldDetectModules').text = str(data.get('should-detect-modules', False)).lower()
+    XML.SubElement(task_scanner, 'dontComputeNew').text = str(data.get('dont-compute-new', False)).lower()
+    XML.SubElement(task_scanner, 'doNotResolveRelativePaths').text = str(data.get('do-not-resolve-relative-paths', False)).lower()
+    XML.SubElement(task_scanner, 'high').text = data.get('high', 'FIXME')
+    XML.SubElement(task_scanner, 'normal').text = data.get('normal', 'TODO')
+    XML.SubElement(task_scanner, 'low').text = data.get('low', '@deprecated')
+    XML.SubElement(task_scanner, 'ignoreCase').text = str(data.get('ignore-case', False)).lower()
+    XML.SubElement(task_scanner, 'asRegexp').text = str(data.get('as-regexp', False)).lower()
+    XML.SubElement(task_scanner, 'pattern').text = data['pattern']
+    XML.SubElement(task_scanner, 'excludePattern').text = data.get('exclude-pattern', '')
+
+    xmlthresholds = XML.SubElement(task_scanner, 'thresholds')
+    if 'thresholds' in data:
+        thresholds = {
+            'unstableTotalAll': data['thresholds'].get('unstable-total-all', ''),
+            'unstableTotalHigh': data['thresholds'].get('unstable-total-high', ''),
+            'unstableTotalNormal': data['thresholds'].get('unstable-total-normal', ''),
+            'unstableTotalLow': data['thresholds'].get('unstable-total-low', ''),
+            'failedTotalAll': data['thresholds'].get('failed-total-all', ''),
+            'failedTotalHigh': data['thresholds'].get('failed-total-high', ''),
+            'failedTotalNormal': data['thresholds'].get('failed-total-normal', ''),
+            'failedTotalLow': data['thresholds'].get('failed-total-low', '')
+        }
+    else:
+        thresholds = {
+            'unstableTotalAll': '',
+            'unstableTotalHigh': '',
+            'unstableTotalNormal': '',
+            'unstableTotalLow': '',
+            'failedTotalAll': '',
+            'failedTotalHigh': '',
+            'failedTotalNormal': '',
+            'failedTotalLow': ''
+        }
+    for key, value in thresholds.items():
+        XML.SubElement(xmlthresholds, key).text = value
+
+
+#      <thresholds plugin="analysis-core@1.65">
+#        <unstableTotalAll></unstableTotalAll>
+#        <unstableTotalHigh></unstableTotalHigh>
+#        <unstableTotalNormal></unstableTotalNormal>
+#        <unstableTotalLow></unstableTotalLow>
+#        <failedTotalAll></failedTotalAll>
+#        <failedTotalHigh></failedTotalHigh>
+#        <failedTotalNormal></failedTotalNormal>
+#        <failedTotalLow></failedTotalLow>
+#      </thresholds>
+
+
