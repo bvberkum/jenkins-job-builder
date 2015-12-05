@@ -15,7 +15,7 @@
 
 import argparse
 import io
-from six.moves import configparser, StringIO
+from six.moves import configparser, StringIO, input
 import fnmatch
 import logging
 import os
@@ -50,7 +50,7 @@ send-as=Jenkins
 
 
 def confirm(question):
-    answer = raw_input('%s (Y/N): ' % question).upper().strip()
+    answer = input('%s (Y/N): ' % question).upper().strip()
     if not answer == 'Y':
         sys.exit('Aborted')
 
@@ -187,6 +187,7 @@ def setup_config_settings(options):
     # Load default config always
     config.readfp(StringIO(DEFAULT_CONF))
     if os.path.isfile(conf):
+        options.conf = conf  # remember file we read from
         logger.debug("Reading config from {0}".format(conf))
         conffp = io.open(conf, 'r', encoding='utf-8')
         config.readfp(conffp)
@@ -246,6 +247,21 @@ def execute(options, config):
             "Password provided, please check your configuration."
         )
 
+    # None -- no timeout, blocking mode; same as setblocking(True)
+    # 0.0 -- non-blocking mode; same as setblocking(False) <--- default
+    # > 0 -- timeout mode; operations time out after timeout seconds
+    # < 0 -- illegal; raises an exception
+    # to retain the default must use
+    # "timeout=jenkins_jobs.builder._DEFAULT_TIMEOUT" or not set timeout at
+    # all.
+    timeout = jenkins_jobs.builder._DEFAULT_TIMEOUT
+    try:
+        timeout = config.getfloat('jenkins', 'timeout')
+    except (ValueError):
+        raise JenkinsJobsException("Jenkins timeout config is invalid")
+    except (TypeError, configparser.NoOptionError):
+        pass
+
     plugins_info = None
 
     if getattr(options, 'plugins_info_path', None) is not None:
@@ -269,35 +285,36 @@ def execute(options, config):
                       user,
                       password,
                       config,
+                      jenkins_timeout=timeout,
                       ignore_cache=ignore_cache,
                       flush_cache=options.flush_cache,
                       plugins_list=plugins_info)
 
     if getattr(options, 'path', None):
-        if options.path == sys.stdin:
+        if hasattr(options.path, 'read'):
             logger.debug("Input file is stdin")
             if options.path.isatty():
                 key = 'CTRL+Z' if platform.system() == 'Windows' else 'CTRL+D'
                 logger.warn(
                     "Reading configuration from STDIN. Press %s to end input.",
                     key)
+        else:
+            # take list of paths
+            options.path = options.path.split(os.pathsep)
 
-        # take list of paths
-        options.path = options.path.split(os.pathsep)
+            do_recurse = (getattr(options, 'recursive', False) or
+                          config.getboolean('job_builder', 'recursive'))
 
-        do_recurse = (getattr(options, 'recursive', False) or
-                      config.getboolean('job_builder', 'recursive'))
-
-        excludes = [e for elist in options.exclude
-                    for e in elist.split(os.pathsep)] or \
-            config.get('job_builder', 'exclude').split(os.pathsep)
-        paths = []
-        for path in options.path:
-            if do_recurse and os.path.isdir(path):
-                paths.extend(recurse_path(path, excludes))
-            else:
-                paths.append(path)
-        options.path = paths
+            excludes = [e for elist in options.exclude
+                        for e in elist.split(os.pathsep)] or \
+                config.get('job_builder', 'exclude').split(os.pathsep)
+            paths = []
+            for path in options.path:
+                if do_recurse and os.path.isdir(path):
+                    paths.extend(recurse_path(path, excludes))
+                else:
+                    paths.append(path)
+            options.path = paths
 
     if options.command == 'delete':
         for job in options.name:

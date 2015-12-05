@@ -4,14 +4,15 @@ README
 .. note::
 
    Brix Customizations: this contains some things not in openstack.
-   To install or update there is a Makefile shortcut: run ``make install`` cq.``make reinstall``
+   To install or update: run ``make install`` cq.``make reinstall``
 
 
-Jenkins Job Builder takes simple descriptions of Jenkins_ jobs in YAML_ or JSON_
-format and uses them to configure Jenkins. You can keep your job descriptions in
-human readable text format in a version control system to make changes and
-auditing easier. It also has a flexible template system, so creating many
-similarly configured jobs is easy.
+Jenkins Job Builder takes simple descriptions of Jenkins_ jobs in YAML_ format,
+and uses them to configure Jenkins. You can keep your job descriptions in human
+readable text format in a version control system to make changes and auditing
+easier. It also has a flexible template system, so creating many similarly
+configured jobs is easy.
+
 
 To install::
 

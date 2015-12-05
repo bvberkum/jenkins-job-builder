@@ -36,6 +36,10 @@ from jenkins_jobs.modules.helpers import cloudformation_stack
 from jenkins_jobs.modules.helpers import config_file_provider_settings
 from jenkins_jobs.modules.helpers import findbugs_settings
 from jenkins_jobs.modules.helpers import get_value_from_yaml_or_config_file
+from jenkins_jobs.modules.helpers import artifactory_deployment_patterns
+from jenkins_jobs.modules.helpers import artifactory_env_vars_patterns
+from jenkins_jobs.modules.helpers import artifactory_optional_props
+from jenkins_jobs.modules.helpers import artifactory_common_details
 from jenkins_jobs.errors import (InvalidAttributeError,
                                  JenkinsJobsException,
                                  MissingAttributeError)
@@ -297,10 +301,18 @@ def trigger_parameterized_builds(parser, xml_parent, data):
     :arg dict boolean-parameters: Pass boolean parameters to the downstream
         jobs. Specify the name and boolean value mapping of the parameters.
         (optional)
-    :arg str condition: when to trigger the other job (default 'ALWAYS')
+    :arg str condition: when to trigger the other job. Can be: 'SUCCESS',
+      'UNSTABLE', 'FAILED_OR_BETTER', 'UNSTABLE_OR_BETTER',
+      'UNSTABLE_OR_WORSE', 'FAILED', 'ALWAYS'. (default: 'ALWAYS')
     :arg str property-file: Use properties from file (optional)
     :arg bool fail-on-missing: Blocks the triggering of the downstream jobs
         if any of the files are not found in the workspace (default 'False')
+    :arg bool use-matrix-child-files: Use files in workspaces of child
+        builds (default 'False')
+    :arg str matrix-child-combination-filter: A Groovy expression to filter
+        the child builds to look in for files
+    :arg bool only-exact-matrix-child-runs: Use only child builds triggered
+        exactly by the parent.
     :arg str file-encoding: Encoding of contents of the files. If not
         specified, default encoding of the platform is used. Only valid when
         'property-file' is specified. (optional)
@@ -362,6 +374,17 @@ def trigger_parameterized_builds(parser, xml_parent, data):
                 if 'file-encoding' in project_def:
                     XML.SubElement(params, 'encoding'
                                    ).text = project_def['file-encoding']
+                if 'use-matrix-child-files' in project_def:
+                    # TODO: These parameters only affect execution in
+                    # publishers of matrix projects; we should warn if they are
+                    # used in other contexts.
+                    XML.SubElement(params, "useMatrixChild").text = (
+                        str(project_def['use-matrix-child-files']).lower())
+                    XML.SubElement(params, "combinationFilter").text = (
+                        project_def.get('matrix-child-combination-filter', ''))
+                    XML.SubElement(params, "onlyExactRuns").text = (
+                        str(project_def.get('only-exact-matrix-child-runs',
+                                            False)).lower())
             if ('current-parameters' in project_def
                     and project_def['current-parameters']):
                 XML.SubElement(tconfigs, pt_prefix + 'CurrentBuildParameters')
@@ -1097,7 +1120,7 @@ def xunit(parser, xml_parent, data):
             # Normalize and craft the element name for this threshold
             elname = "%sThreshold" % threshold_name.lower().replace(
                 'new', 'New')
-            XML.SubElement(el, elname).text = threshold_value
+            XML.SubElement(el, elname).text = str(threshold_value)
 
     # Whether to use percent of exact number of tests.
     # Thresholdmode is either:
@@ -2467,6 +2490,144 @@ def maven_deploy(parser, xml_parent, data):
         XML.SubElement(p, 'releaseEnvVar').text = data['release-env-var']
 
 
+def artifactory(parser, xml_parent, data):
+    """yaml: artifactory
+    Uses/requires the Artifactory plugin to deploy artifacts to
+    Artifactory Server.
+
+    Requires the Jenkins `Artifactory Plugin.
+    :jenkins-wiki: `Artifactory Plugin <Artifactory+Plugin>`.
+
+    :arg str url: Artifactory server url (default '')
+    :arg str name: Artifactory user with permissions use for
+        connected to the selected Artifactory Server (default '')
+    :arg str release-repo-key: Release repository name (default '')
+    :arg str snapshot-repo-key: Snapshots repository name (default '')
+    :arg bool publish-build-info: Push build metadata with artifacts
+        (default False)
+    :arg bool discard-old-builds:
+        Remove older build info from Artifactory (default False)
+    :arg bool discard-build-artifacts:
+        Remove older build artifacts from Artifactory (default False)
+    :arg bool even-if-unstable: Deploy artifacts even when the build
+        is unstable (default False)
+    :arg bool run-checks: Run automatic license scanning check after the
+        build is complete (default False)
+    :arg bool include-publish-artifacts: Include the build's published
+        module artifacts in the license violation checks if they are
+        also used as dependencies for other modules in this build
+        (default False)
+    :arg bool pass-identified-downstream: When true, a build parameter
+        named ARTIFACTORY_BUILD_ROOT with a value of
+        ${JOB_NAME}-${BUILD_NUMBER} will be sent to downstream builds
+        (default False)
+    :arg bool license-auto-discovery: Tells Artifactory not to try
+        and automatically analyze and tag the build's dependencies
+        with license information upon deployment (default True)
+    :arg bool enable-issue-tracker-integration: When the Jenkins
+        JIRA plugin is enabled, synchronize information about JIRA
+        issues to Artifactory and attach issue information to build
+        artifacts (default False)
+    :arg bool aggregate-build-issues: When the Jenkins JIRA plugin
+        is enabled, include all issues from previous builds up to the
+        latest build status defined in "Aggregation Build Status"
+        (default False)
+    :arg bool allow-promotion-of-non-staged-builds: The build
+        promotion operation will be available to all successful builds
+        instead of only staged ones (default False)
+    :arg bool filter-excluded-artifacts-from-build: Add the excluded
+        files to the excludedArtifacts list and remove them from the
+        artifacts list in the build info (default False)
+    :arg str scopes:  A list of dependency scopes/configurations to run
+        license violation checks on. If left empty all dependencies from
+        all scopes will be checked (default '')
+    :arg str violation-recipients: Recipients that need to be notified
+        of license violations in the build info (default '')
+    :arg list matrix-params: Semicolon-separated list of properties to
+        attach to all deployed artifacts in addition to the default ones:
+        build.name, build.number, and vcs.revision (default [])
+    :arg str black-duck-app-name: The existing Black Duck Code Center
+        application name (default '')
+    :arg str black-duck-app-version: The existing Black Duck Code Center
+        application version (default '')
+    :arg str black-duck-report-recipients: Recipients that will be emailed
+        a report after the automatic Black Duck Code Center compliance checks
+        finished (default '')
+    :arg str black-duck-scopes: A list of dependency scopes/configurations
+        to run Black Duck Code Center compliance checks on. If left empty
+        all dependencies from all scopes will be checked (default '')
+    :arg bool black-duck-run-checks: Automatic Black Duck Code Center
+        compliance checks will occur after the build completes
+        (default False)
+    :arg bool black-duck-include-published-artifacts: Include the build's
+        published module artifacts in the license violation checks if they
+        are also used as dependencies for other modules in this build
+        (default False)
+    :arg bool auto-create-missing-component-requests: Auto create
+        missing components in Black Duck Code Center application after
+        the build is completed and deployed in Artifactory
+        (default True)
+    :arg bool auto-discard-stale-component-requests: Auto discard
+        stale components in Black Duck Code Center application after
+        the build is completed and deployed in Artifactory
+        (default True)
+    :arg bool deploy-artifacts: Push artifacts to the Artifactory
+        Server. Use deployment-include-patterns and
+        deployment-exclude-patterns to filter deploy artifacts. (default True)
+    :arg list deployment-include-patterns: New line or comma separated mappings
+        of build artifacts to published artifacts. Supports Ant-style wildcards
+        mapping to target directories. E.g.: */*.zip=>dir (default [])
+    :arg list deployment-exclude-patterns: New line or comma separated patterns
+        for excluding artifacts from deployment to Artifactory (default [])
+    :arg bool env-vars-include: Include all environment variables
+        accessible by the build process. Jenkins-specific env variables
+        are always included. Use env-vars-include-patterns and
+        env-vars-exclude-patterns to filter variables to publish,
+        (default False)
+    :arg list env-vars-include-patterns: Comma or space-separated list of
+        environment variables that will be included as part of the published
+        build info. Environment variables may contain the * and the ? wildcards
+        (default [])
+    :arg list env-vars-exclude-patterns: Comma or space-separated list of
+        environment variables that will be excluded from the published
+        build info (default [])
+
+    Example:
+
+    .. literalinclude:: /../../tests/publishers/fixtures/artifactory01.yaml
+
+    .. literalinclude:: /../../tests/publishers/fixtures/artifactory02.yaml
+
+    """
+
+    artifactory = XML.SubElement(
+        xml_parent, 'org.jfrog.hudson.ArtifactoryRedeployPublisher')
+
+    # optional_props
+    artifactory_optional_props(artifactory, data, 'publishers')
+
+    XML.SubElement(artifactory, 'matrixParams').text = ','.join(
+        data.get('matrix-params', []))
+
+    # details
+    details = XML.SubElement(artifactory, 'details')
+    artifactory_common_details(details, data)
+
+    XML.SubElement(details, 'repositoryKey').text = data.get(
+        'release-repo-key', '')
+    XML.SubElement(details, 'snapshotsRepositoryKey').text = data.get(
+        'snapshot-repo-key', '')
+
+    plugin = XML.SubElement(details, 'stagingPlugin')
+    XML.SubElement(plugin, 'pluginName').text = 'None'
+
+    # artifactDeploymentPatterns
+    artifactory_deployment_patterns(artifactory, data)
+
+    # envVarsPatterns
+    artifactory_env_vars_patterns(artifactory, data)
+
+
 def text_finder(parser, xml_parent, data):
     """yaml: text-finder
     This plugin lets you search keywords in the files you specified and
@@ -2700,6 +2861,10 @@ def postbuildscript(parser, xml_parent, data):
     :arg bool onfailure: Deprecated, replaced with script-only-if-failed
     :arg bool script-only-if-failed: Scripts and builders are run only if the
                                      build failed (default False)
+    :arg bool mark-unstable-if-failed: Build will be marked unstable
+                                       if job will be successfully completed
+                                       but publishing script will return
+                                       non zero exit code (default False)
     :arg str execute-on: For matrix projects, scripts can be run after each
                          axis is built (`axes`), after all axis of the matrix
                          are built (`matrix`) or after each axis AND the matrix
@@ -2792,6 +2957,9 @@ def postbuildscript(parser, xml_parent, data):
     else:
         failure_xml.text = str(data.get('onfailure', False)).lower()
 
+    # Mark build unstable if publisher script return non zero exit code
+    XML.SubElement(pbs_xml, 'markBuildUnstable').text = str(
+        data.get('mark-unstable-if-failed', False)).lower()
     # TODO: we may want to avoid setting "execute-on" on non-matrix jobs,
     # either by skipping this part or by raising an error to let the user know
     # an attempt was made to set execute-on on a non-matrix job. There are
@@ -3276,6 +3444,9 @@ def plot(parser, xml_parent, data):
 
     .. literalinclude:: /../../tests/publishers/fixtures/plot004.yaml
        :language: yaml
+
+    .. literalinclude:: /../../tests/publishers/fixtures/plot005.yaml
+       :language: yaml
     """
     top = XML.SubElement(xml_parent, 'hudson.plugins.plot.PlotPublisher')
     plots = XML.SubElement(top, 'plots')
@@ -3318,6 +3489,12 @@ def plot(parser, xml_parent, data):
                     inclusion_dict.get(inclusion_flag)
                 XML.SubElement(subserie, 'exclusionValues').text = \
                     serie.get('exclude', '')
+                if serie.get('exclude', ''):
+                    exclude_strings = serie.get('exclude', '').split(',')
+                    exclusionset = XML.SubElement(subserie, 'strExclusionSet')
+                    for exclude_string in exclude_strings:
+                        XML.SubElement(exclusionset, 'string').text = \
+                            exclude_string
                 XML.SubElement(subserie, 'url').text = serie.get('url', '')
                 XML.SubElement(subserie, 'displayTableFlag').text = \
                     str(plot.get('display-table', False)).lower()
@@ -4235,6 +4412,56 @@ def downstream_ext(parser, xml_parent, data):
         data.get('only-on-local-scm-change', False)).lower()
 
 
+def rundeck(parser, xml_parent, data):
+    """yaml: rundeck
+    Trigger a rundeck job when the build is complete.
+
+    Requires the Jenkins :jenkins-wiki:`RunDeck
+    Plugin <RunDeck+Plugin>`.
+
+    :arg str job-id: The RunDeck job identifier. (required)
+        This could be:
+        * ID example : "42"
+        * UUID example : "2027ce89-7924-4ecf-a963-30090ada834f"
+        * reference, in the format : "project:group/job"
+    :arg str options: List of options for the Rundeck job, in Java-Properties
+      format: key=value (default "")
+    :arg str node-filters: List of filters to optionally filter the nodes
+      included by the job. (default "")
+    :arg str tag: Used for on-demand job scheduling on rundeck: if a tag is
+      specified, the job will only execute if the given tag is present in the
+      SCM changelog. (default "")
+    :arg bool wait-for-rundeck: If true Jenkins will wait for the job to
+      complete, if false the job will be started and Jenkins will move on.
+      (default false)
+    :arg bool fail-the-build: If true a RunDeck job failure will cause the
+      Jenkins build to fail. (default false)
+
+    Example:
+
+    .. literalinclude:: /../../tests/publishers/fixtures/rundeck001.yaml
+        :language: yaml
+
+    Full example:
+
+    .. literalinclude:: /../../tests/publishers/fixtures/rundeck002.yaml
+        :language: yaml
+    """
+
+    p = XML.SubElement(
+        xml_parent,
+        'org.jenkinsci.plugins.rundeck.RundeckNotifier')
+
+    XML.SubElement(p, 'jobId').text = str(data.get('job-id'))
+    XML.SubElement(p, 'options').text = str(data.get('options', ''))
+    XML.SubElement(p, 'nodeFilters').text = str(data.get('node-filters', ''))
+    XML.SubElement(p, 'tag').text = str(data.get('tag', ''))
+    XML.SubElement(p, 'shouldWaitForRundeckJob').text = str(
+        data.get('wait-for-rundeck', False)).lower()
+    XML.SubElement(p, 'shouldFailTheBuild').text = str(
+        data.get('fail-the-build', False)).lower()
+
+
 def create_publishers(parser, action):
     dummy_parent = XML.Element("dummy")
     parser.registry.dispatch('publisher', parser, dummy_parent, action)
@@ -4285,6 +4512,11 @@ def conditional_publisher(parser, xml_parent, data):
                        executed by cmd, under Windows
 
                          :condition-command: Command to execute
+    regexp             Run the action if a regular expression matches
+
+                         :condition-expression: Regular Expression
+                         :condition-searchtext: Text to match against
+                           the regular expression
     file-exists        Run the action if a file exists
 
                          :condition-filename: Check existence of this file
@@ -4363,6 +4595,12 @@ def conditional_publisher(parser, xml_parent, data):
             ctag.set('class',
                      class_pkg + '.contributed.BatchFileCondition')
             XML.SubElement(ctag, "command").text = cdata['condition-command']
+        elif kind == "regexp":
+            ctag.set('class',
+                     class_pkg + '.core.ExpressionCondition')
+            XML.SubElement(ctag,
+                           "expression").text = cdata['condition-expression']
+            XML.SubElement(ctag, "label").text = cdata['condition-searchtext']
         elif kind == "file-exists":
             ctag.set('class',
                      class_pkg + '.core.FileExistsCondition')
@@ -5189,6 +5427,48 @@ def hipchat(parser, xml_parent, data):
     if 'complete-message' in data:
         XML.SubElement(hipchat, 'completeJobMessage').text = str(
             data['complete-message'])
+
+
+def phabricator(parser, xml_parent, data):
+    """yaml: phabricator
+    Integrate with `Phabricator <http://phabricator.org/>`_
+
+    Requires the Jenkins :jenkins-wiki:`Phabricator Plugin
+    <Phabricator+Plugin>`.
+
+    :arg bool comment-on-success: Post a *comment* when the build
+      succeeds. (optional)
+    :arg bool uberalls-enabled: Integrate with uberalls. (optional)
+    :arg str comment-file: Include contents of given file if
+      commenting is enabled. (optional)
+    :arg int comment-size: Maximum comment character length. (optional)
+    :arg bool comment-with-console-link-on-failure: Post a *comment*
+      when the build fails. (optional)
+
+    Example:
+
+    .. literalinclude::
+        /../../tests/publishers/fixtures/phabricator001.yaml
+       :language: yaml
+    """
+
+    root = XML.SubElement(xml_parent,
+                          'com.uber.jenkins.phabricator.PhabricatorNotifier')
+
+    if 'comment-on-success' in data:
+        XML.SubElement(root, 'commentOnSuccess').text = str(
+            data.get('comment-on-success')).lower()
+    if 'uberalls-enabled' in data:
+        XML.SubElement(root, 'uberallsEnabled').text = str(
+            data.get('uberalls-enabled')).lower()
+    if 'comment-file' in data:
+        XML.SubElement(root, 'commentFile').text = data.get('comment-file')
+    if 'comment-size' in data:
+        XML.SubElement(root, 'commentSize').text = str(
+            data.get('comment-size'))
+    if 'comment-with-console-link-on-failure' in data:
+        XML.SubElement(root, 'commentWithConsoleLinkOnFailure').text = str(
+            data.get('comment-with-console-link-on-failure')).lower()
 
 
 class Publishers(jenkins_jobs.modules.base.Base):

@@ -71,11 +71,15 @@ jenkins section
 **url**
   The base URL for your Jenkins installation.
 
+**timeout**
+  (Optional) The connection timeout (in seconds) to the Jenkins server.
+  By default this is set to the system configured socket timeout.
+
 **query_plugins_info**
-  Whether to query the Jenkins instance for plugin info when a configuration
-  file is provided. If a configuration file is not provided `jenkins-jobs` will
-  ignore this setting and skip querying for plugin information. True by
-  default.
+  Whether to query the Jenkins instance for plugin info. If no configuration
+  files are found (either in the default paths or given through the
+  command-line), `jenkins-jobs` will skip querying for plugin information. True
+  by default.
 
 
 hipchat section

@@ -640,16 +640,16 @@ def pollscm(parser, xml_parent, data):
     XML.SubElement(scmtrig, 'ignorePostCommitHooks').text = ipch
 
 
-def build_pollurl_content_type(xml_parent, entries, prefix,
-                               collection_name, element_name):
-    namespace = 'org.jenkinsci.plugins.urltrigger.content'
+def build_content_type(xml_parent, entries, namespace, collection_suffix,
+                       entry_suffix, prefix, collection_name, element_name):
     content_type = XML.SubElement(
-        xml_parent, '{0}.{1}ContentType'.format(namespace, prefix))
+        xml_parent, '{0}.{1}{2}'.format(namespace, prefix, collection_suffix))
     if entries:
         collection = XML.SubElement(content_type, collection_name)
         for entry in entries:
             content_entry = XML.SubElement(
-                collection, '{0}.{1}ContentEntry'.format(namespace, prefix))
+                collection, '{0}.{1}{2}'.format(namespace, prefix,
+                                                entry_suffix))
             XML.SubElement(content_entry, element_name).text = entry
 
 
@@ -694,6 +694,7 @@ def pollurl(parser, xml_parent, data):
     .. literalinclude:: /../../tests/triggers/fixtures/pollurl001.yaml
     """
 
+    namespace = 'org.jenkinsci.plugins.urltrigger.'
     valid_content_types = {
         'simple': ['Simple', '', '', []],
         'json': ['JSON', 'jsonPaths', 'jsonPath', None],
@@ -701,7 +702,7 @@ def pollurl(parser, xml_parent, data):
         'xml': ['XML', 'xPaths', 'xPath', None]
     }
     urltrig = XML.SubElement(xml_parent,
-                             'org.jenkinsci.plugins.urltrigger.URLTrigger')
+                             namespace + 'URLTrigger')
     node = data.get('polling-node')
     XML.SubElement(urltrig, 'spec').text = data.get('cron', '')
     XML.SubElement(urltrig, 'labelRestriction').text = str(bool(node)).lower()
@@ -712,9 +713,7 @@ def pollurl(parser, xml_parent, data):
     if not urls:
         raise JenkinsJobsException('At least one url must be provided')
     for url in urls:
-        entry = XML.SubElement(entries,
-                               'org.jenkinsci.plugins.urltrigger.'
-                               'URLTriggerEntry')
+        entry = XML.SubElement(entries, namespace + 'URLTriggerEntry')
         XML.SubElement(entry, 'url').text = url['url']
         XML.SubElement(entry, 'proxyActivated').text = \
             str(url.get('proxy', False)).lower()
@@ -751,9 +750,9 @@ def pollurl(parser, xml_parent, data):
                 sub_entries = content_type[3]
                 if sub_entries is None:
                     sub_entries = entry[type_name]
-                build_pollurl_content_type(content_types,
-                                           sub_entries,
-                                           *content_type[0:3])
+                build_content_type(content_types, sub_entries,
+                                   namespace + 'content', 'ContentType',
+                                   'ContentEntry', *content_type[0:3])
 
 
 def timed(parser, xml_parent, data):
@@ -826,7 +825,28 @@ def github_pull_request(parser, xml_parent, data):
         allows you to selectively test pull requests destined for these
         branches only. Supports regular expressions (e.g. 'master',
         'feature-.*'). (optional)
-
+    :arg string auth-id: the auth id to use (optional)
+    :arg string build-desc-template: the template for build descriptions in
+        jenkins (optional)
+    :arg string status-context: the context to include on PR status comments
+        (optional)
+    :arg string triggered-status: the status message to set when the build has
+        been triggered (optional)
+    :arg string started-status: the status comment to set when the build has
+        been started (optional)
+    :arg string status-url: the status URL to set (optional)
+    :arg string success-status: the status message to set if the job succeeds
+        (optional)
+    :arg string failure-status: the status message to set if the job fails
+        (optional)
+    :arg string error-status: the status message to set if the job errors
+        (optional)
+    :arg string success-comment: comment to add to the PR on a successful job
+        (optional)
+    :arg string failure-comment: comment to add to the PR on a failed job
+        (optional)
+    :arg string error-comment: comment to add to the PR on an errored job
+        (optional)
 
     Example:
 
@@ -844,6 +864,12 @@ def github_pull_request(parser, xml_parent, data):
     org_string = "\n".join(data.get('org-list', []))
     XML.SubElement(ghprb, 'orgslist').text = org_string
     XML.SubElement(ghprb, 'cron').text = data.get('cron', '')
+
+    build_desc_template = data.get('build-desc-template', '')
+    if build_desc_template:
+        XML.SubElement(ghprb, 'buildDescTemplate').text = str(
+            build_desc_template)
+
     XML.SubElement(ghprb, 'triggerPhrase').text = \
         data.get('trigger-phrase', '')
     XML.SubElement(ghprb, 'onlyTriggerPhrase').text = str(
@@ -862,6 +888,113 @@ def github_pull_request(parser, xml_parent, data):
             be = XML.SubElement(ghprb_wltb, 'org.jenkinsci.plugins.'
                                 'ghprb.GhprbBranch')
             XML.SubElement(be, 'branch').text = str(branch)
+
+    auth_id = data.get('auth-id', '')
+    if auth_id:
+        XML.SubElement(ghprb, 'gitHubAuthId').text = str(auth_id)
+
+    # PR status update fields
+    status_context = data.get('status-context', '')
+    triggered_status = data.get('triggered-status', '')
+    started_status = data.get('started-status', '')
+    status_url = data.get('status-url', '')
+    success_status = data.get('success-status', '')
+    failure_status = data.get('failure-status', '')
+    error_status = data.get('error-status', '')
+
+    # is status handling is required?
+    requires_status = (
+        status_context or
+        triggered_status or
+        started_status or
+        status_url or
+        success_status or
+        failure_status or
+        error_status
+    )
+
+    # is status message handling required?
+    requires_status_message = (
+        success_status or
+        failure_status or
+        error_status
+    )
+
+    # Both comment and status elements have this same type.  Using a const is
+    # much easier to read than repeating the tokens for this class each time
+    # it's used
+    comment_type = 'org.jenkinsci.plugins.ghprb.extensions.comments.'
+    comment_type = comment_type + 'GhprbBuildResultMessage'
+
+    if requires_status:
+        extensions = XML.SubElement(ghprb, 'extensions')
+        simple_status = XML.SubElement(extensions,
+                                       'org.jenkinsci.plugins'
+                                       '.ghprb.extensions.status.'
+                                       'GhprbSimpleStatus')
+        if status_context:
+            XML.SubElement(simple_status, 'commitStatusContext').text = str(
+                status_context)
+        if triggered_status:
+            XML.SubElement(simple_status, 'triggeredStatus').text = str(
+                triggered_status)
+        if started_status:
+            XML.SubElement(simple_status, 'startedStatus').text = str(
+                started_status)
+        if status_url:
+            XML.SubElement(simple_status, 'statusUrl').text = str(
+                status_url)
+
+        if requires_status_message:
+            completed_elem = XML.SubElement(simple_status, 'completedStatus')
+            if success_status:
+                success_elem = XML.SubElement(completed_elem, comment_type)
+                XML.SubElement(success_elem, 'message').text = str(
+                    success_status)
+                XML.SubElement(success_elem, 'result').text = 'SUCCESS'
+            if failure_status:
+                failure_elem = XML.SubElement(completed_elem, comment_type)
+                XML.SubElement(failure_elem, 'message').text = str(
+                    failure_status)
+                XML.SubElement(failure_elem, 'result').text = 'FAILURE'
+            if error_status:
+                error_elem = XML.SubElement(completed_elem, comment_type)
+                XML.SubElement(error_elem, 'message').text = str(error_status)
+                XML.SubElement(error_elem, 'result').text = 'ERROR'
+
+    # comment fields
+    success_comment = data.get('success-comment', '')
+    failure_comment = data.get('failure-comment', '')
+    error_comment = data.get('error-comment', '')
+    requires_job_comment = (
+        success_comment or
+        failure_comment or
+        error_comment
+    )
+
+    # job comment handling
+    if requires_job_comment:
+        extensions = XML.SubElement(ghprb, 'extensions')
+        build_status = XML.SubElement(extensions,
+                                      'org.jenkinsci.plugins.ghprb.extensions'
+                                      '.comments.'
+                                      'GhprbBuildStatus')
+        messages_elem = XML.SubElement(build_status, 'messages')
+        if success_comment:
+            success_comment_elem = XML.SubElement(messages_elem, comment_type)
+            XML.SubElement(success_comment_elem, 'message').text = str(
+                success_comment)
+            XML.SubElement(success_comment_elem, 'result').text = 'SUCCESS'
+        if failure_comment:
+            failure_comment_elem = XML.SubElement(messages_elem, comment_type)
+            XML.SubElement(failure_comment_elem, 'message').text = str(
+                failure_comment)
+            XML.SubElement(failure_comment_elem, 'result').text = 'FAILURE'
+        if error_comment:
+            error_comment_elem = XML.SubElement(messages_elem, comment_type)
+            XML.SubElement(error_comment_elem, 'message').text = str(
+                error_comment)
+            XML.SubElement(error_comment_elem, 'result').text = 'ERROR'
 
 
 def gitlab_merge_request(parser, xml_parent, data):
@@ -894,6 +1027,70 @@ def gitlab_merge_request(parser, xml_parent, data):
     XML.SubElement(ghprb, 'spec').text = data.get('cron')
     XML.SubElement(ghprb, '__cron').text = data.get('cron')
     XML.SubElement(ghprb, '__projectPath').text = data.get('project-path')
+
+
+def gitlab(parser, xml_parent, data):
+    """yaml: gitlab
+    Makes Jenkins act like a GitlabCI server
+    Requires the Jenkins :jenkins-wiki:`Gitlab Plugin.
+    <Gitlab+Plugin>`.
+
+    :arg bool trigger-push: Build on Push Events (default: true)
+    :arg bool trigger-merge-request: Build on Merge Request Events (default:
+        True)
+    :arg bool trigger-open-merge-request-push: Rebuild open Merge Requests on
+        Push Events (default: True)
+    :arg bool ci-skip: Enable [ci-skip] (default True)
+    :arg bool set-build-description: Set build description to build cause
+        (eg. Merge request or Git Push ) (default: True)
+    :arg bool add-note-merge-request: Add note with build status on
+        merge requests (default: True)
+    :arg bool add-vote-merge-request: Vote added to note with build status
+        on merge requests (default: True)
+    :arg bool allow-all-branches: Allow all branches (Ignoring Filtered
+        Branches) (default: False)
+    :arg list include-branches: Defined list of branches to include
+        (default: [])
+    :arg list exclude-branches: Defined list of branches to exclude
+        (default: [])
+
+    Example:
+
+    .. literalinclude::
+        /../../tests/triggers/fixtures/gitlab001.yaml
+    """
+    def _add_xml(elem, name, value):
+        XML.SubElement(elem, name).text = value
+
+    gitlab = XML.SubElement(
+        xml_parent, 'com.dabsquared.gitlabjenkins.GitLabPushTrigger'
+    )
+
+    bool_mapping = (
+        ('trigger-push', 'triggerOnPush', True),
+        ('trigger-merge-request', 'triggerOnMergeRequest', True),
+        ('trigger-open-merge-request-push', 'triggerOpenMergeRequestOnPush',
+            True),
+        ('ci-skip', 'ciSkip', True),
+        ('set-build-description', 'setBuildDescription', True),
+        ('add-note-merge-request', 'addNoteOnMergeRequest', True),
+        ('add-vote-merge-request', 'addVoteOnMergeRequest', True),
+        ('allow-all-branches', 'allowAllBranches', False),
+    )
+    list_mapping = (
+        ('include-branches', 'includeBranchesSpec', []),
+        ('exclude-branches', 'excludeBranchesSpec', []),
+    )
+
+    XML.SubElement(gitlab, 'spec').text = ''
+
+    for yaml_name, xml_name, default_val in bool_mapping:
+        value = str(data.get(yaml_name, default_val)).lower()
+        _add_xml(gitlab, xml_name, value)
+
+    for yaml_name, xml_name, default_val in list_mapping:
+        value = ', '.join(data.get(yaml_name, default_val))
+        _add_xml(gitlab, xml_name, value)
 
 
 def build_result(parser, xml_parent, data):
@@ -1061,6 +1258,150 @@ def monitor_folders(parser, xml_parent, data):
         not data.get('check-fewer', True)).lower()
 
 
+def monitor_files(parser, xml_parent, data):
+    """yaml: monitor-files
+    Configure Jenkins to monitor files.
+    Requires the Jenkins :jenkins-wiki:`Filesystem Trigger Plugin
+    <FSTriggerPlugin>`.
+
+    :arg list files: List of files to monitor
+
+        :File:
+            * **path** (`str`) -- File path to monitor. You can use a pattern
+              that specifies a set of files if you dont know the real file
+              path. (required)
+            * **strategy** (`str`) -- Choose your strategy if there is more
+              than one matching file. Can be one of Ignore file ('IGNORE') or
+              Use the most recent ('LATEST'). (default 'LATEST')
+            * **check-content** (`list`) -- List of content changes of the
+              file to monitor
+
+                :Content Nature:
+                    * **simple** (`bool`) -- Trigger on change in content of
+                      the specified file (whatever the type file).
+                      (default false)
+                    * **jar** (`bool`) -- Trigger on change in content of the
+                      specified JAR file. (default false)
+                    * **tar** (`bool`) -- Trigger on change in content of the
+                      specified Tar file. (default false)
+                    * **zip** (`bool`) -- Trigger on change in content of the
+                      specified ZIP file. (default false)
+                    * **source-manifest** (`list`) -- Trigger on change to
+                      MANIFEST files.
+
+                        :MANIFEST File:
+                            * **keys** (`list`) -- List of keys to inspect.
+                              (optional)
+                            * **all-keys** (`bool`) -- If true, take into
+                              account all keys. (default true)
+
+                    * **jar-manifest** (`list`) -- Trigger on change to
+                      MANIFEST files (contained in jar files).
+
+                        :MANIFEST File:
+                            * **keys** (`list`) -- List of keys to inspect.
+                              (optional)
+                            * **all-keys** (`bool`) -- If true, take into
+                              account all keys. (default true)
+
+                    * **properties** (`list`) -- Monitor the contents of the
+                      properties file.
+
+                        :Properties File:
+                            * **keys** (`list`) -- List of keys to inspect.
+                              (optional)
+                            * **all-keys** (`bool`) -- If true, take into
+                              account all keys. (default true)
+
+                    * **xml** (`list str`) -- Trigger on change to the listed
+                      XPath expressions.
+                    * **text** (`list str`) -- Trigger on change to the listed
+                      regular expressions.
+
+             * **ignore-modificaton-date** (`bool`) -- If true, ignore the file
+               modification date. Only valid when content changes of the file
+               are being monitored. (default true)
+    :arg str cron: cron syntax of when to run (default '')
+
+    Example:
+
+    .. literalinclude:: /../../tests/triggers/fixtures/monitor-files001.yaml
+       :language: yaml
+    """
+    ft_prefix = 'org.jenkinsci.plugins.fstrigger.triggers.'
+    valid_strategies = ['LATEST', 'IGNORE']
+    valid_content_types = {
+        'simple': ['Simple', '', '', []],
+        'jar': ['JAR', '', '', []],
+        'tar': ['Tar', '', '', []],
+        'zip': ['ZIP', '', '', []],
+        'source-manifest': ['SourceManifest'],
+        'jar-manifest': ['JARManifest'],
+        'properties': ['Properties'],
+        'xml': ['XML', 'expressions', 'expression', None],
+        'text': ['Text', 'regexElements', 'regex', None]
+    }
+
+    ft = XML.SubElement(xml_parent, ft_prefix + 'FileNameTrigger')
+    XML.SubElement(ft, 'spec').text = str(data.get('cron', ''))
+    files = data.get('files', [])
+    if not files:
+        raise JenkinsJobsException('At least one file must be provided')
+
+    files_tag = XML.SubElement(ft, 'fileInfo')
+    for file_info in files:
+        file_tag = XML.SubElement(files_tag, ft_prefix + 'FileNameTriggerInfo')
+        try:
+            XML.SubElement(file_tag,
+                           'filePathPattern').text = file_info['path']
+        except KeyError:
+            raise MissingAttributeError('path')
+
+        strategy = file_info.get('strategy', 'LATEST')
+        if strategy not in valid_strategies:
+            raise InvalidAttributeError('strategy', strategy, valid_strategies)
+        XML.SubElement(file_tag, 'strategy').text = strategy
+        check_content = file_info.get('check-content', [])
+        XML.SubElement(file_tag, 'inspectingContentFile').text = str(
+            bool(check_content)).lower()
+
+        base_content_tag = XML.SubElement(file_tag, 'contentFileTypes')
+        for content in check_content:
+            type_name = next(iter(content.keys()))
+            if type_name not in valid_content_types:
+                raise InvalidAttributeError('check-content', type_name,
+                                            valid_content_types.keys())
+            content_type = valid_content_types.get(type_name)
+            if len(content_type) == 1:
+                class_name = '{0}filecontent.{1}FileContent'.format(
+                    ft_prefix, content_type[0])
+                content_data = content.get(type_name)
+                if not content_data:
+                    raise JenkinsJobsException("Need to specify something "
+                                               "under " + type_name)
+                for entry in content_data:
+                    content_tag = XML.SubElement(base_content_tag, class_name)
+                    keys = entry.get('keys', [])
+                    if keys:
+                        XML.SubElement(content_tag, 'keys2Inspect'
+                                       ).text = ",".join(keys)
+                    XML.SubElement(content_tag, 'allKeys').text = str(
+                        entry.get('all-keys', True)).lower()
+            else:
+                if content[type_name]:
+                    sub_entries = content_type[3]
+                    if sub_entries is None:
+                        sub_entries = content[type_name]
+                    build_content_type(base_content_tag, sub_entries,
+                                       ft_prefix + 'filecontent',
+                                       'FileContent', 'FileContentEntry',
+                                       *content_type[0:3])
+        if bool(check_content):
+            XML.SubElement(file_tag,
+                           'doNotCheckLastModificationDate').text = str(
+                file_info.get('ignore-modificaton-date', True)).lower()
+
+
 def ivy(parser, xml_parent, data):
     """yaml: ivy
     Poll with an Ivy script
@@ -1117,7 +1458,7 @@ def script(parser, xml_parent, data):
 
     :arg str label: Restrict where the polling should run. (default '')
     :arg str script: A shell or batch script. (default '')
-    :arg str script-file-path: A shell or batch script path. (default '')
+    :arg str script-file-path: A shell or batch script path. (optional)
     :arg str cron: cron syntax of when to run (default '')
     :arg bool enable-concurrent:  Enables triggering concurrent builds.
                                   (default false)
@@ -1136,8 +1477,9 @@ def script(parser, xml_parent, data):
     label = data.get('label')
 
     XML.SubElement(st, 'script').text = str(data.get('script', ''))
-    XML.SubElement(st, 'scriptFilePath').text = str(
-        data.get('script-file-path', ''))
+    if 'script-file-path' in data:
+        XML.SubElement(st, 'scriptFilePath').text = str(
+            data.get('script-file-path'))
     XML.SubElement(st, 'spec').text = str(data.get('cron', ''))
     XML.SubElement(st, 'labelRestriction').text = str(bool(label)).lower()
     if label:

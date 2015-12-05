@@ -162,6 +162,49 @@ def config_file_provider_settings(xml_parent, data):
                        {'class': settings['default-global-settings']})
 
 
+def copyartifact_build_selector(xml_parent, data, select_tag='selector'):
+
+    select = data.get('which-build', 'last-successful')
+    selectdict = {'last-successful': 'StatusBuildSelector',
+                  'last-completed': 'LastCompletedBuildSelector',
+                  'specific-build': 'SpecificBuildSelector',
+                  'last-saved': 'SavedBuildSelector',
+                  'upstream-build': 'TriggeredBuildSelector',
+                  'permalink': 'PermalinkBuildSelector',
+                  'workspace-latest': 'WorkspaceSelector',
+                  'build-param': 'ParameterizedBuildSelector'}
+    if select not in selectdict:
+        raise InvalidAttributeError('which-build',
+                                    select,
+                                    selectdict.keys())
+    permalink = data.get('permalink', 'last')
+    permalinkdict = {'last': 'lastBuild',
+                     'last-stable': 'lastStableBuild',
+                     'last-successful': 'lastSuccessfulBuild',
+                     'last-failed': 'lastFailedBuild',
+                     'last-unstable': 'lastUnstableBuild',
+                     'last-unsuccessful': 'lastUnsuccessfulBuild'}
+    if permalink not in permalinkdict:
+        raise InvalidAttributeError('permalink',
+                                    permalink,
+                                    permalinkdict.keys())
+    selector = XML.SubElement(xml_parent, select_tag,
+                              {'class': 'hudson.plugins.copyartifact.' +
+                               selectdict[select]})
+    if select == 'specific-build':
+        XML.SubElement(selector, 'buildNumber').text = data['build-number']
+    if select == 'last-successful':
+        XML.SubElement(selector, 'stable').text = str(
+            data.get('stable', False)).lower()
+    if select == 'upstream-build':
+        XML.SubElement(selector, 'fallbackToLastSuccessful').text = str(
+            data.get('fallback-to-last-successful', False)).lower()
+    if select == 'permalink':
+        XML.SubElement(selector, 'id').text = permalinkdict[permalink]
+    if select == 'build-param':
+        XML.SubElement(selector, 'parameterName').text = data['param']
+
+
 def findbugs_settings(xml_parent, data):
     # General Options
     rank_priority = str(data.get('rank-priority', False)).lower()
@@ -242,3 +285,128 @@ def cloudformation_stack(xml_parent, stack, xml_tag, stacks, region_dict):
             XML.SubElement(step, 'cloudFormationRecipe').text = stack['recipe']
         except KeyError as e:
             raise MissingAttributeError(e.args[0])
+
+
+def include_exclude_patterns(xml_parent, data, yaml_prefix,
+                             xml_elem_name):
+    xml_element = XML.SubElement(xml_parent, xml_elem_name)
+    XML.SubElement(xml_element, 'includePatterns').text = ','.join(
+        data.get(yaml_prefix + '-include-patterns', []))
+    XML.SubElement(xml_element, 'excludePatterns').text = ','.join(
+        data.get(yaml_prefix + '-exclude-patterns', []))
+
+
+def artifactory_deployment_patterns(xml_parent, data):
+    include_exclude_patterns(xml_parent, data, 'deployment',
+                             'artifactDeploymentPatterns')
+
+
+def artifactory_env_vars_patterns(xml_parent, data):
+    include_exclude_patterns(xml_parent, data, 'env-vars',
+                             'envVarsPatterns')
+
+
+def artifactory_optional_props(xml_parent, data, target):
+    optional_str_props = [
+        ('scopes', 'scopes'),
+        ('violationRecipients', 'violation-recipients'),
+        ('blackDuckAppName', 'black-duck-app-name'),
+        ('blackDuckAppVersion', 'black-duck-app-version'),
+        ('blackDuckReportRecipients', 'black-duck-report-recipients'),
+        ('blackDuckScopes', 'black-duck-scopes')
+    ]
+
+    for (xml_prop, yaml_prop) in optional_str_props:
+        XML.SubElement(xml_parent, xml_prop).text = data.get(
+            yaml_prop, '')
+
+    common_bool_props = [
+        # xml property name, yaml property name, default value
+        ('deployArtifacts', 'deploy-artifacts', True),
+        ('discardOldBuilds', 'discard-old-builds', False),
+        ('discardBuildArtifacts', 'discard-build-artifacts', False),
+        ('deployBuildInfo', 'publish-build-info', False),
+        ('includeEnvVars', 'env-vars-include', False),
+        ('runChecks', 'run-checks', False),
+        ('includePublishArtifacts', 'include-publish-artifacts', False),
+        ('licenseAutoDiscovery', 'license-auto-discovery', True),
+        ('enableIssueTrackerIntegration', 'enable-issue-tracker-integration',
+            False),
+        ('aggregateBuildIssues', 'aggregate-build-issues', False),
+        ('blackDuckRunChecks', 'black-duck-run-checks', False),
+        ('blackDuckIncludePublishedArtifacts',
+            'black-duck-include-published-artifacts', False),
+        ('autoCreateMissingComponentRequests',
+            'auto-create-missing-component-requests', True),
+        ('autoDiscardStaleComponentRequests',
+            'auto-discard-stale-component-requests', True),
+        ('filterExcludedArtifactsFromBuild',
+            'filter-excluded-artifacts-from-build', False)
+    ]
+
+    for (xml_prop, yaml_prop, default_value) in common_bool_props:
+        XML.SubElement(xml_parent, xml_prop).text = str(data.get(
+            yaml_prop, default_value)).lower()
+
+    if 'wrappers' in target:
+        wrapper_bool_props = [
+            ('enableResolveArtifacts', 'enable-resolve-artifacts', False),
+            ('disableLicenseAutoDiscovery',
+                'disable-license-auto-discovery', False),
+            ('recordAllDependencies',
+                'record-all-dependencies', False)
+        ]
+
+        for (xml_prop, yaml_prop, default_value) in wrapper_bool_props:
+            XML.SubElement(xml_parent, xml_prop).text = str(data.get(
+                yaml_prop, default_value)).lower()
+
+    if 'publishers' in target:
+        publisher_bool_props = [
+            ('evenIfUnstable', 'even-if-unstable', False),
+            ('passIdentifiedDownstream', 'pass-identified-downstream', False),
+            ('allowPromotionOfNonStagedBuilds',
+                'allow-promotion-of-non-staged-builds', False)
+        ]
+
+        for (xml_prop, yaml_prop, default_value) in publisher_bool_props:
+            XML.SubElement(xml_parent, xml_prop).text = str(data.get(
+                yaml_prop, default_value)).lower()
+
+
+def artifactory_common_details(details, data):
+    XML.SubElement(details, 'artifactoryName').text = data.get('name', '')
+    XML.SubElement(details, 'artifactoryUrl').text = data.get('url', '')
+
+
+def artifactory_repository(xml_parent, data, target):
+    if 'release' in target:
+        XML.SubElement(xml_parent, 'keyFromText').text = data.get(
+            'deploy-release-repo-key', '')
+        XML.SubElement(xml_parent, 'keyFromSelect').text = data.get(
+            'deploy-release-repo-key', '')
+        XML.SubElement(xml_parent, 'dynamicMode').text = str(
+            data.get('deploy-dynamic-mode', False)).lower()
+
+    if 'snapshot' in target:
+        XML.SubElement(xml_parent, 'keyFromText').text = data.get(
+            'deploy-snapshot-repo-key', '')
+        XML.SubElement(xml_parent, 'keyFromSelect').text = data.get(
+            'deploy-snapshot-repo-key', '')
+        XML.SubElement(xml_parent, 'dynamicMode').text = str(
+            data.get('deploy-dynamic-mode', False)).lower()
+
+
+def convert_mapping_to_xml(parent, data, mapping):
+
+    for elem in mapping:
+        (optname, xmlname, val) = elem
+        val = data.get(optname, val)
+        # if no value is provided then continue else leave it
+        # up to the user if they want to use an empty XML tag
+        if val is None:
+            continue
+        if str(val).lower() == 'true' or str(val).lower() == 'false':
+            val = str(val).lower()
+        xe = XML.SubElement(parent, xmlname)
+        xe.text = str(val)

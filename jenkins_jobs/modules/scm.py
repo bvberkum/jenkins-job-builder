@@ -39,6 +39,7 @@ Example of an empty ``scm``:
 import logging
 import xml.etree.ElementTree as XML
 import jenkins_jobs.modules.base
+from jenkins_jobs.modules.helpers import convert_mapping_to_xml
 from jenkins_jobs.errors import (InvalidAttributeError,
                                  JenkinsJobsException,
                                  MissingAttributeError)
@@ -372,6 +373,8 @@ def git(parser, xml_parent, data):
     if 'timeout' in data:
         co = XML.SubElement(exts_node, impl_prefix + 'CheckoutOption')
         XML.SubElement(co, 'timeout').text = str(data['timeout'])
+        clo = XML.SubElement(exts_node, impl_prefix + 'CloneOption')
+        XML.SubElement(clo, 'timeout').text = str(data['timeout'])
     polling_using_workspace = str(data.get('force-polling-using-workspace',
                                            False)).lower()
     if polling_using_workspace == 'true':
@@ -1044,6 +1047,59 @@ def hg(self, xml_parent, data):
         else:
             raise JenkinsJobsException("A browser-url must be specified along "
                                        "with browser.")
+
+
+def openshift_img_streams(parser, xml_parent, data):
+    """yaml: openshift-img-streams
+    Rather than a Build step extension plugin, this is an extension of the
+    Jenkins SCM plugin, where this baked-in polling mechanism provided by
+    Jenkins is leveraged by exposing some of the common semantics between
+    OpenShift ImageStreams (which are abstractions of Docker repositories)
+    and SCMs - versions / commit IDs of related artifacts
+    (images vs. programmatics files)
+    Requires the Jenkins `OpenShift3 Plugin
+    <https://github.com/gabemontero/openshift-jenkins-buildutils/>`_
+
+    :arg str image-stream-name: The name of the ImageStream is what shows up
+        in the NAME column if you dump all the ImageStream's with the
+        `oc get is` command invocation. (default: nodejs-010-centos7)
+    :arg str tag: The specific image tag within the ImageStream to monitor.
+        (default: latest)
+    :arg str api-url: This would be the value you specify if you leverage the
+        --server option on the OpenShift `oc` command.
+        (default: \https://openshift.default.svc.cluster.local\)
+    :arg str namespace: The value here should be whatever was the output
+        form `oc project` when you created the BuildConfig you want to run
+        a Build on. (default: test)
+    :arg str auth-token: The value here is what you supply with the --token
+        option when invoking the OpenShift `oc` command. (optional)
+
+    Full Example:
+
+    .. literalinclude::
+        ../../tests/scm/fixtures/openshift-img-streams001.yaml
+       :language: yaml
+
+    Minimal Example:
+
+    .. literalinclude::
+        ../../tests/scm/fixtures/openshift-img-streams002.yaml
+       :language: yaml
+    """
+    scm = XML.SubElement(xml_parent,
+                         'scm', {'class':
+                                 'com.openshift.openshiftjenkinsbuildutils.'
+                                 'OpenShiftImageStreams'})
+    mapping = [
+        # option, xml name, default value
+        ("image-stream-name", 'imageStreamName', 'nodejs-010-centos7'),
+        ("tag", 'tag', 'latest'),
+        ("api-url", 'apiURL', 'https://openshift.default.svc.cluster.local'),
+        ("namespace", 'namespace', 'test'),
+        ("auth-token", 'authToken', ''),
+    ]
+
+    convert_mapping_to_xml(scm, data, mapping)
 
 
 class SCM(jenkins_jobs.modules.base.Base):
