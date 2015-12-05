@@ -66,6 +66,14 @@ def deep_format(obj, paramdict, allow_empty=False):
         ret = obj
     return ret
 
+# has_ordered_dict
+            #( ( isinstance(key, int ) and isinstance(args[key], OrderedDict) ) or ( isinstance(key, basestring) and isinstance(kwargs[key], OrderedDict))):
+
+def is_complex(key, args, kwargs):
+    if isinstance(key, int):
+        return isinstance(args[key], (dict, list, OrderedDict))
+    elif isinstance(key, basestring):
+        return isinstance(kwargs[key], (dict, list, OrderedDict))
 
 class CustomFormatter(Formatter):
     """
@@ -78,8 +86,9 @@ class CustomFormatter(Formatter):
 
     def get_value(self, key, args, kwargs):
         try:
-            if isinstance(key, basestring) and isinstance(kwargs[key], OrderedDict):
-                return json.dumps(Formatter.get_value(self, key, args, kwargs))
+            # Brix Hack: format OrderedDict as regular dict on variable-expansion
+            if is_complex(key, args, kwargs):
+                return json.dumps(kwargs[key])
             else:
                 return Formatter.get_value(self, key, args, kwargs)
         except KeyError:
