@@ -307,6 +307,12 @@ def trigger_parameterized_builds(parser, xml_parent, data):
     :arg str property-file: Use properties from file (optional)
     :arg bool fail-on-missing: Blocks the triggering of the downstream jobs
         if any of the files are not found in the workspace (default 'False')
+    :arg bool use-matrix-child-files: Use files in workspaces of child
+        builds (default 'False')
+    :arg str matrix-child-combination-filter: A Groovy expression to filter
+        the child builds to look in for files
+    :arg bool only-exact-matrix-child-runs: Use only child builds triggered
+        exactly by the parent.
     :arg str file-encoding: Encoding of contents of the files. If not
         specified, default encoding of the platform is used. Only valid when
         'property-file' is specified. (optional)
@@ -368,6 +374,17 @@ def trigger_parameterized_builds(parser, xml_parent, data):
                 if 'file-encoding' in project_def:
                     XML.SubElement(params, 'encoding'
                                    ).text = project_def['file-encoding']
+                if 'use-matrix-child-files' in project_def:
+                    # TODO: These parameters only affect execution in
+                    # publishers of matrix projects; we should warn if they are
+                    # used in other contexts.
+                    XML.SubElement(params, "useMatrixChild").text = (
+                        str(project_def['use-matrix-child-files']).lower())
+                    XML.SubElement(params, "combinationFilter").text = (
+                        project_def.get('matrix-child-combination-filter', ''))
+                    XML.SubElement(params, "onlyExactRuns").text = (
+                        str(project_def.get('only-exact-matrix-child-runs',
+                                            False)).lower())
             if ('current-parameters' in project_def
                     and project_def['current-parameters']):
                 XML.SubElement(tconfigs, pt_prefix + 'CurrentBuildParameters')
@@ -4395,6 +4412,56 @@ def downstream_ext(parser, xml_parent, data):
         data.get('only-on-local-scm-change', False)).lower()
 
 
+def rundeck(parser, xml_parent, data):
+    """yaml: rundeck
+    Trigger a rundeck job when the build is complete.
+
+    Requires the Jenkins :jenkins-wiki:`RunDeck
+    Plugin <RunDeck+Plugin>`.
+
+    :arg str job-id: The RunDeck job identifier. (required)
+        This could be:
+        * ID example : "42"
+        * UUID example : "2027ce89-7924-4ecf-a963-30090ada834f"
+        * reference, in the format : "project:group/job"
+    :arg str options: List of options for the Rundeck job, in Java-Properties
+      format: key=value (default "")
+    :arg str node-filters: List of filters to optionally filter the nodes
+      included by the job. (default "")
+    :arg str tag: Used for on-demand job scheduling on rundeck: if a tag is
+      specified, the job will only execute if the given tag is present in the
+      SCM changelog. (default "")
+    :arg bool wait-for-rundeck: If true Jenkins will wait for the job to
+      complete, if false the job will be started and Jenkins will move on.
+      (default false)
+    :arg bool fail-the-build: If true a RunDeck job failure will cause the
+      Jenkins build to fail. (default false)
+
+    Example:
+
+    .. literalinclude:: /../../tests/publishers/fixtures/rundeck001.yaml
+        :language: yaml
+
+    Full example:
+
+    .. literalinclude:: /../../tests/publishers/fixtures/rundeck002.yaml
+        :language: yaml
+    """
+
+    p = XML.SubElement(
+        xml_parent,
+        'org.jenkinsci.plugins.rundeck.RundeckNotifier')
+
+    XML.SubElement(p, 'jobId').text = str(data.get('job-id'))
+    XML.SubElement(p, 'options').text = str(data.get('options', ''))
+    XML.SubElement(p, 'nodeFilters').text = str(data.get('node-filters', ''))
+    XML.SubElement(p, 'tag').text = str(data.get('tag', ''))
+    XML.SubElement(p, 'shouldWaitForRundeckJob').text = str(
+        data.get('wait-for-rundeck', False)).lower()
+    XML.SubElement(p, 'shouldFailTheBuild').text = str(
+        data.get('fail-the-build', False)).lower()
+
+
 def create_publishers(parser, action):
     dummy_parent = XML.Element("dummy")
     parser.registry.dispatch('publisher', parser, dummy_parent, action)
@@ -4445,6 +4512,11 @@ def conditional_publisher(parser, xml_parent, data):
                        executed by cmd, under Windows
 
                          :condition-command: Command to execute
+    regexp             Run the action if a regular expression matches
+
+                         :condition-expression: Regular Expression
+                         :condition-searchtext: Text to match against
+                           the regular expression
     file-exists        Run the action if a file exists
 
                          :condition-filename: Check existence of this file
@@ -4523,6 +4595,12 @@ def conditional_publisher(parser, xml_parent, data):
             ctag.set('class',
                      class_pkg + '.contributed.BatchFileCondition')
             XML.SubElement(ctag, "command").text = cdata['condition-command']
+        elif kind == "regexp":
+            ctag.set('class',
+                     class_pkg + '.core.ExpressionCondition')
+            XML.SubElement(ctag,
+                           "expression").text = cdata['condition-expression']
+            XML.SubElement(ctag, "label").text = cdata['condition-searchtext']
         elif kind == "file-exists":
             ctag.set('class',
                      class_pkg + '.core.FileExistsCondition')
