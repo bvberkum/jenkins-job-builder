@@ -19,6 +19,9 @@ import logging
 from pprint import pformat
 import re
 from string import Formatter
+import json
+
+from ordereddict import OrderedDict
 
 from jenkins_jobs.errors import JenkinsJobsException
 
@@ -75,7 +78,10 @@ class CustomFormatter(Formatter):
 
     def get_value(self, key, args, kwargs):
         try:
-            return Formatter.get_value(self, key, args, kwargs)
+            if isinstance(key, basestring) and isinstance(kwargs[key], OrderedDict):
+                return json.dumps(Formatter.get_value(self, key, args, kwargs))
+            else:
+                return Formatter.get_value(self, key, args, kwargs)
         except KeyError:
             if self.allow_empty:
                 logger.debug(
