@@ -38,11 +38,12 @@ Example of an empty ``scm``:
 
 import logging
 import xml.etree.ElementTree as XML
+
+from jenkins_jobs.errors import InvalidAttributeError
+from jenkins_jobs.errors import JenkinsJobsException
+from jenkins_jobs.errors import MissingAttributeError
 import jenkins_jobs.modules.base
 from jenkins_jobs.modules.helpers import convert_mapping_to_xml
-from jenkins_jobs.errors import (InvalidAttributeError,
-                                 JenkinsJobsException,
-                                 MissingAttributeError)
 
 
 def git(parser, xml_parent, data):
@@ -1057,8 +1058,8 @@ def openshift_img_streams(parser, xml_parent, data):
     OpenShift ImageStreams (which are abstractions of Docker repositories)
     and SCMs - versions / commit IDs of related artifacts
     (images vs. programmatics files)
-    Requires the Jenkins `OpenShift3 Plugin
-    <https://github.com/gabemontero/openshift-jenkins-buildutils/>`_
+    Requires the Jenkins :jenkins-wiki:`OpenShift
+    Pipeline Plugin <OpenShift+Pipeline+Plugin>`._
 
     :arg str image-stream-name: The name of the ImageStream is what shows up
         in the NAME column if you dump all the ImageStream's with the
@@ -1073,6 +1074,8 @@ def openshift_img_streams(parser, xml_parent, data):
         a Build on. (default: test)
     :arg str auth-token: The value here is what you supply with the --token
         option when invoking the OpenShift `oc` command. (optional)
+    :arg str verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (optional)
 
     Full Example:
 
@@ -1088,7 +1091,7 @@ def openshift_img_streams(parser, xml_parent, data):
     """
     scm = XML.SubElement(xml_parent,
                          'scm', {'class':
-                                 'com.openshift.openshiftjenkinsbuildutils.'
+                                 'com.openshift.jenkins.plugins.pipeline.'
                                  'OpenShiftImageStreams'})
     mapping = [
         # option, xml name, default value
@@ -1097,9 +1100,70 @@ def openshift_img_streams(parser, xml_parent, data):
         ("api-url", 'apiURL', 'https://openshift.default.svc.cluster.local'),
         ("namespace", 'namespace', 'test'),
         ("auth-token", 'authToken', ''),
+        ("verbose", 'verbose', ''),
     ]
 
     convert_mapping_to_xml(scm, data, mapping)
+
+
+def bzr(parser, xml_parent, data):
+    """yaml: bzr
+    Specifies the bzr SCM repository for this job.
+    Requires the Jenkins :jenkins-wiki:`Bazaar Plugin <Bazaar+Plugin>`.
+
+    :arg str url: URL of the bzr branch
+    :arg bool clean-tree: Clean up the workspace (using bzr) before pulling
+        the branch (default: false)
+    :arg bool lightweight-checkout: Use a lightweight checkout instead of a
+        full branch (default: false)
+    :arg str browser: The repository browser to use.
+
+        :browsers supported:
+            * **auto** - (default)
+            * **loggerhead** - as used by Launchpad
+            * **opengrok** - https://opengrok.github.io/OpenGrok/
+
+    :arg str browser-url:
+        URL for the repository browser (required if browser is set).
+
+    :arg str opengrok-root-module:
+        Root module for OpenGrok (required if browser is opengrok).
+
+    Example:
+
+    .. literalinclude:: /../../tests/scm/fixtures/bzr001.yaml
+    """
+    if 'url' not in data:
+        raise JenkinsJobsException('Must specify a url for bzr scm')
+    mapping = [
+        # option, xml name, default value (text), attributes (hard coded)
+        ('url', 'source', ''),
+        ('clean-tree', 'cleantree', False),
+        ('lightweight-checkout', 'checkout', False),
+    ]
+    scm_element = XML.SubElement(
+        xml_parent, 'scm', {'class': 'hudson.plugins.bazaar.BazaarSCM'})
+    convert_mapping_to_xml(scm_element, data, mapping)
+
+    browser_name_to_class = {
+        'loggerhead': 'Loggerhead',
+        'opengrok': 'OpenGrok',
+    }
+    browser = data.get('browser', 'auto')
+    if browser == 'auto':
+        return
+    if browser not in browser_name_to_class:
+        raise InvalidAttributeError('browser', browser,
+                                    browser_name_to_class.keys())
+    browser_element = XML.SubElement(
+        scm_element,
+        'browser',
+        {'class': 'hudson.plugins.bazaar.browsers.{0}'.format(
+            browser_name_to_class[browser])})
+    XML.SubElement(browser_element, 'url').text = data['browser-url']
+    if browser == 'opengrok':
+        XML.SubElement(browser_element, 'rootModule').text = (
+            data['opengrok-root-module'])
 
 
 class SCM(jenkins_jobs.modules.base.Base):

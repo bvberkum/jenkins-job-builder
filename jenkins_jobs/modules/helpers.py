@@ -12,13 +12,14 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-import xml.etree.ElementTree as XML
 import logging
+import xml.etree.ElementTree as XML
 
 from six.moves import configparser
-from jenkins_jobs.errors import (JenkinsJobsException,
-                                 MissingAttributeError,
-                                 InvalidAttributeError)
+
+from jenkins_jobs.errors import InvalidAttributeError
+from jenkins_jobs.errors import JenkinsJobsException
+from jenkins_jobs.errors import MissingAttributeError
 
 
 def build_trends_publisher(plugin_name, xml_element, data):
@@ -172,7 +173,8 @@ def copyartifact_build_selector(xml_parent, data, select_tag='selector'):
                   'upstream-build': 'TriggeredBuildSelector',
                   'permalink': 'PermalinkBuildSelector',
                   'workspace-latest': 'WorkspaceSelector',
-                  'build-param': 'ParameterizedBuildSelector'}
+                  'build-param': 'ParameterizedBuildSelector',
+                  'downstream-build': 'DownstreamBuildSelector'}
     if select not in selectdict:
         raise InvalidAttributeError('which-build',
                                     select,
@@ -203,6 +205,11 @@ def copyartifact_build_selector(xml_parent, data, select_tag='selector'):
         XML.SubElement(selector, 'id').text = permalinkdict[permalink]
     if select == 'build-param':
         XML.SubElement(selector, 'parameterName').text = data['param']
+    if select == 'downstream-build':
+        XML.SubElement(selector, 'upstreamProjectName').text = (
+            data['upstream-project-name'])
+        XML.SubElement(selector, 'upstreamBuildNumber').text = (
+            data['upstream-build-number'])
 
 
 def findbugs_settings(xml_parent, data):

@@ -29,16 +29,18 @@ Example::
       - timed: '@daily'
 """
 
-
-import six
-import xml.etree.ElementTree as XML
-import jenkins_jobs.modules.base
-from jenkins_jobs.modules import hudson_model
-from jenkins_jobs.errors import (InvalidAttributeError,
-                                 JenkinsJobsException,
-                                 MissingAttributeError)
 import logging
 import re
+import xml.etree.ElementTree as XML
+
+import six
+
+from jenkins_jobs.errors import InvalidAttributeError
+from jenkins_jobs.errors import JenkinsJobsException
+from jenkins_jobs.errors import MissingAttributeError
+import jenkins_jobs.modules.base
+from jenkins_jobs.modules import hudson_model
+
 try:
     from collections import OrderedDict
 except ImportError:
@@ -632,7 +634,7 @@ def pollscm(parser, xml_parent, data):
         cron = data
         ipch = 'false'
 
-    if not cron:
+    if not cron and cron != '':
         raise InvalidAttributeError('cron', cron)
 
     scmtrig = XML.SubElement(xml_parent, 'hudson.triggers.SCMTrigger')
@@ -1047,6 +1049,7 @@ def gitlab(parser, xml_parent, data):
         merge requests (default: True)
     :arg bool add-vote-merge-request: Vote added to note with build status
         on merge requests (default: True)
+    :arg bool add-ci-message: Add CI build status (default: False)
     :arg bool allow-all-branches: Allow all branches (Ignoring Filtered
         Branches) (default: False)
     :arg list include-branches: Defined list of branches to include
@@ -1075,6 +1078,7 @@ def gitlab(parser, xml_parent, data):
         ('set-build-description', 'setBuildDescription', True),
         ('add-note-merge-request', 'addNoteOnMergeRequest', True),
         ('add-vote-merge-request', 'addVoteOnMergeRequest', True),
+        ('add-ci-message', 'addCiMessage', False),
         ('allow-all-branches', 'allowAllBranches', False),
     )
     list_mapping = (

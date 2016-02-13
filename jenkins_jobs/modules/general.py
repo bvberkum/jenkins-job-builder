@@ -95,9 +95,14 @@ Example:
       history. It adds the ``logrotate`` attribute to the :ref:`Job`
       definition. All logrotate attributes default to "-1" (keep forever).
 
+    * **raw**:
+      If present, this section should contain a single **xml** entry. This XML
+      will be inserted at the top-level of the :ref:`Job` definition.
+
 """
 
 import xml.etree.ElementTree as XML
+
 import jenkins_jobs.modules.base
 from jenkins_jobs.xml_config import remove_ignorable_whitespace
 
@@ -170,6 +175,9 @@ class General(jenkins_jobs.modules.base.Base):
             lr_adays.text = str(logrotate.get('artifactDaysToKeep', -1))
             lr_anum = XML.SubElement(lr_xml, 'artifactNumToKeep')
             lr_anum.text = str(logrotate.get('artifactNumToKeep', -1))
+
+        if 'raw' in data:
+            raw(parser, xml, data['raw'])
 
 
 def raw(parser, xml_parent, data):
