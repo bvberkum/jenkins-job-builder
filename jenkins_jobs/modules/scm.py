@@ -171,6 +171,8 @@ def git(parser, xml_parent, data):
             * **tracking** (`bool`) - Retrieve the tip of the configured
               branch in .gitmodules (Uses '\-\-remote' option which requires
               git>=1.8.2)
+            * **reference-repo** (`str`) - Path of the reference repo to use
+              during clone (optional)
             * **timeout** (`int`) - Specify a timeout (in minutes) for
               submodules operations (default: 10).
         * **timeout** (`str`) - Timeout for git commands in minutes (optional)
@@ -369,6 +371,8 @@ def git(parser, xml_parent, data):
             data['submodule'].get('recursive', False)).lower()
         XML.SubElement(ext, 'trackingSubmodules').text = str(
             data['submodule'].get('tracking', False)).lower()
+        XML.SubElement(ext, 'reference').text = str(
+            data['submodule'].get('reference-repo', ''))
         XML.SubElement(ext, 'timeout').text = str(
             data['submodule'].get('timeout', 10))
     if 'timeout' in data:
@@ -575,10 +579,23 @@ def repo(parser, xml_parent, data):
     :arg str mirror-dir: Path to mirror directory to reference when
         initialising (optional)
     :arg int jobs: Number of projects to fetch simultaneously (default 0)
+    :arg int depth: Specify the depth in history to sync from the source. The
+        default is to sync all of the history. Use 1 to just sync the most
+        recent commit (default 0)
     :arg bool current-branch: Fetch only the current branch from the server
         (default true)
+    :arg bool reset-first: Remove any commits that are not on the repositories
+        by running the following command before anything else (default false):
+        ``repo forall -c "git reset --hard"``
     :arg bool quiet: Make repo more quiet
         (default true)
+    :arg bool force-sync: Continue sync even if a project fails to sync
+        (default false)
+    :arg bool no-tags: Don't fetch tags (default false)
+    :arg bool trace: Trace git command execution into the build logs. (default
+        false)
+    :arg bool show-all-changes: When this is checked --first-parent is no
+        longer passed to git log when determining changesets (default false)
     :arg str local-manifest: Contents of .repo/local_manifest.xml, written
         prior to calling sync (optional)
 
@@ -605,8 +622,14 @@ def repo(parser, xml_parent, data):
         ("repo-url", 'repoUrl', ''),
         ("mirror-dir", 'mirrorDir', ''),
         ("jobs", 'jobs', 0),
+        ("depth", 'depth', 0),
         ("current-branch", 'currentBranch', True),
+        ("reset-first", 'resetFirst', False),
         ("quiet", 'quiet', True),
+        ("force-sync", 'forceSync', False),
+        ("no-tags", 'noTags', False),
+        ("trace", 'trace', False),
+        ("show-all-changes", 'showAllChanges', False),
         ("local-manifest", 'localManifest', ''),
     ]
 

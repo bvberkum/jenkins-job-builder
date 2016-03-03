@@ -29,6 +29,7 @@ Example::
       - timed: '@daily'
 """
 
+from collections import OrderedDict
 import logging
 import re
 import xml.etree.ElementTree as XML
@@ -40,11 +41,6 @@ from jenkins_jobs.errors import JenkinsJobsException
 from jenkins_jobs.errors import MissingAttributeError
 import jenkins_jobs.modules.base
 from jenkins_jobs.modules import hudson_model
-
-try:
-    from collections import OrderedDict
-except ImportError:
-    from ordereddict import OrderedDict
 
 logger = logging.getLogger(str(__name__))
 
@@ -1204,7 +1200,7 @@ def reverse(parser, xml_parent, data):
         jobs
 
     threshold = XML.SubElement(reserveBuildTrigger, 'threshold')
-    result = data.get('result').upper()
+    result = str(data.get('result', 'success')).upper()
     if result not in supported_thresholds:
         raise jenkins_jobs.errors.JenkinsJobsException(
             "Choice should be one of the following options: %s." %

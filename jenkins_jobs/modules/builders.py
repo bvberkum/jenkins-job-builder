@@ -773,6 +773,38 @@ def artifact_resolver(parser, xml_parent, data):
     XML.SubElement(ar, 'releaseChecksumPolicy').text = 'warn'
 
 
+def doxygen(parser, xml_parent, data):
+    """yaml: doxygen
+    Builds doxygen HTML documentation. Requires the Jenkins
+    :jenkins-wiki:`Doxygen plugin <Doxygen+Plugin>`.
+
+    :arg str doxyfile: The doxyfile path (required)
+    :arg str install: The doxygen installation to use (required)
+    :arg bool ignore-failure: Keep executing build even on doxygen generation
+        failure (default false)
+    :arg bool unstable-warning: Mark the build as unstable if warnings are
+        generated (default false)
+
+    Example:
+
+    .. literalinclude:: /../../tests/builders/fixtures/doxygen001.yaml
+       :language: yaml
+
+    """
+    doxygen = XML.SubElement(xml_parent,
+                             'hudson.plugins.doxygen.DoxygenBuilder')
+    try:
+        XML.SubElement(doxygen, 'doxyfilePath').text = str(data['doxyfile'])
+        XML.SubElement(doxygen, 'installationName').text = str(data['install'])
+    except KeyError as e:
+        raise MissingAttributeError(e.arg[0])
+
+    XML.SubElement(doxygen, 'continueOnBuildFailure').text = str(
+        data.get('ignore-failure', False)).lower()
+    XML.SubElement(doxygen, 'unstableIfWarnings').text = str(
+        data.get('unstable-warning', False)).lower()
+
+
 def gradle(parser, xml_parent, data):
     """yaml: gradle
     Execute gradle tasks. Requires the Jenkins :jenkins-wiki:`Gradle Plugin
@@ -2873,3 +2905,31 @@ def runscope(parser, xml_parent, data):
     except KeyError as e:
         raise MissingAttributeError(e.args[0])
     XML.SubElement(runscope, 'timeout').text = str(data.get('timeout', '60'))
+
+
+def description_setter(parser, xml_parent, data):
+    """yaml: description-setter
+    This plugin sets the description for each build,
+    based upon a RegEx test of the build log file.
+
+    Requires the Jenkins :jenkins-wiki:`Description Setter Plugin
+    <Description+Setter+Plugin>`.
+
+    :arg str regexp: A RegEx which is used to scan the build log file
+        (default '')
+    :arg str description: The description to set on the build (optional)
+
+    Example:
+
+    .. literalinclude::
+        /../../tests/builders/fixtures/description-setter001.yaml
+       :language: yaml
+    """
+
+    descriptionsetter = XML.SubElement(
+        xml_parent,
+        'hudson.plugins.descriptionsetter.DescriptionSetterBuilder')
+    XML.SubElement(descriptionsetter, 'regexp').text = data.get('regexp', '')
+    if 'description' in data:
+        XML.SubElement(descriptionsetter, 'description').text = data[
+            'description']

@@ -2956,7 +2956,7 @@ def post_tasks(parser, xml_parent, data):
                 matches_xml,
                 'hudson.plugins.postbuildtask.LogProperties')
             XML.SubElement(lt_xml, 'logText').text = str(
-                match.get('log-text', ''))
+                match.get('log-text', False) or '')
             XML.SubElement(lt_xml, 'operator').text = str(
                 match.get('operator', 'AND')).upper()
         XML.SubElement(task_xml, 'EscalateStatus').text = str(
@@ -3268,6 +3268,14 @@ def warnings(parser, xml_parent, data):
         decreasing. However, sometimes false positives will be reported due
         to minor changes in a warning (refactoring of variable of method
         names, etc.) (default false)
+    :arg bool use-previous-build-as-reference: If set the number of new
+        warnings will always be computed based on the previous build, even if
+        that build is unstable (due to a violated warning threshold).
+        Otherwise the last build that did not violate any given threshold will
+        be used as
+        reference. It is recommended to uncheck this option if the plug-in
+        should ensure that all new warnings will be finally fixed in subsequent
+        builds. (default false)
     :arg bool only-use-stable-builds-as-reference: The number of new warnings
         will be calculated based on the last stable build, allowing reverts
         of unstable builds where the number of warnings was decreased.
@@ -3337,6 +3345,9 @@ def warnings(parser, xml_parent, data):
         XML.SubElement(warnings, 'dontComputeNew').text = 'false'
         delta = data.get('use-delta-for-new-warnings', False)
         XML.SubElement(warnings, 'useDeltaValues').text = str(delta).lower()
+        use_previous_build = data.get('use-previous-build-as-reference', False)
+        XML.SubElement(warnings, 'usePreviousBuildAsReference').text = str(
+            use_previous_build).lower()
         use_stable_builds = data.get('only-use-stable-builds-as-reference',
                                      False)
         XML.SubElement(warnings, 'useStableBuildAsReference').text = str(
@@ -3924,7 +3935,8 @@ def doxygen(parser, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`Doxygen Plugin <Doxygen+Plugin>`.
 
     :arg str doxyfile: The doxyfile path
-    :arg bool keepall: Retain doxygen generation for each successful build
+    :arg str slave: The node or label to pull the doxygen HTML files from
+    :arg bool keep-all: Retain doxygen generation for each successful build
         (default: false)
     :arg str folder: Folder where you run doxygen (default: '')
 
@@ -3933,13 +3945,29 @@ def doxygen(parser, xml_parent, data):
     .. literalinclude:: /../../tests/publishers/fixtures/doxygen001.yaml
        :language: yaml
     """
+
+    logger = logging.getLogger(__name__)
     p = XML.SubElement(xml_parent, 'hudson.plugins.doxygen.DoxygenArchiver')
-    if not data['doxyfile']:
-        raise JenkinsJobsException("The path to a doxyfile must be specified.")
-    XML.SubElement(p, 'doxyfilePath').text = str(data.get("doxyfile"))
-    XML.SubElement(p, 'keepAll').text = str(data.get("keepall", False)).lower()
-    XML.SubElement(p, 'folderWhereYouRunDoxygen').text = \
-        str(data.get("folder", ""))
+    if not data.get('doxyfile'):
+        raise JenkinsJobsException('The path to a doxyfile must be specified.')
+    XML.SubElement(p, 'doxyfilePath').text = str(data.get('doxyfile'))
+    XML.SubElement(p, 'runOnChild').text = str(data.get('slave', ''))
+    # backward compatibility
+    if 'keepall' in data:
+        if 'keep-all' in data:
+            XML.SubElement(p, 'keepAll').text = str(
+                data.get('keep-all', False)).lower()
+            logger.warn("The value of 'keepall' will be ignored "
+                        "in preference to 'keep-all'.")
+        else:
+            XML.SubElement(p, 'keepAll').text = str(
+                data.get('keepall', False)).lower()
+            logger.warn("'keepall' is deprecated please use 'keep-all'")
+    else:
+        XML.SubElement(p, 'keepAll').text = str(
+            data.get('keep-all', False)).lower()
+    XML.SubElement(p, 'folderWhereYouRunDoxygen').text = str(
+        data.get('folder', ''))
 
 
 def sitemonitor(parser, xml_parent, data):
@@ -4509,7 +4537,7 @@ def downstream_ext(parser, xml_parent, data):
     conditions = {
         "equal-or-over": "AND_HIGHER",
         "equal-or-under": "AND_LOWER",
-        "equal": "EQUAL"
+        "equal": "EXACT"
     }
 
     p = XML.SubElement(xml_parent,
@@ -5622,6 +5650,52 @@ def hipchat(parser, xml_parent, data):
             data['complete-message'])
 
 
+def slack(parser, xml_parent, data):
+    """yaml: slack
+    Publisher that sends slack notifications on job events.
+
+    Requires the Jenkins :jenkins-wiki:`Slack Plugin <Slack+Plugin>`
+
+    As the Slack Plugin itself requires a publisher aswell as properties
+    please note that you have to create those too.
+
+    :arg str team-domain: Your team's domain at slack. (default: '')
+    :arg str auth-token: The integration token to be used when sending
+        notifications. (default: '')
+    :arg str build-server-url: Specify the URL for your server installation.
+        (default: '/')
+    :arg str room: A comma seperated list of rooms / channels to post the
+        notifications to. (default: '')
+    Example:
+
+    .. literalinclude::
+        /../../tests/publishers/fixtures/slack001.yaml
+        :language: yaml
+    """
+    def _add_xml(elem, name, value=''):
+        XML.SubElement(elem, name).text = value
+
+    mapping = (
+        ('team-domain', 'teamDomain', ''),
+        ('auth-token', 'authToken', ''),
+        ('build-server-url', 'buildServerUrl', '/'),
+        ('room', 'room', ''),
+    )
+
+    slack = XML.SubElement(
+        xml_parent,
+        'jenkins.plugins.slack.SlackNotifier',
+    )
+
+    for yaml_name, xml_name, default_value in mapping:
+        value = data.get(yaml_name, default_value)
+        # All arguments that don't have a default value are mandatory for the
+        # plugin to work as intended.
+        if not value:
+            raise MissingAttributeError(yaml_name)
+        _add_xml(slack, xml_name, value)
+
+
 def phabricator(parser, xml_parent, data):
     """yaml: phabricator
     Integrate with `Phabricator <http://phabricator.org/>`_
@@ -5760,6 +5834,52 @@ def openshift_deploy_canceller(parser, xml_parent, data):
         ("namespace", 'namespace', 'test'),
         ("auth-token", 'authToken', ''),
         ("verbose", 'verbose', 'false'),
+    ]
+
+    convert_mapping_to_xml(osb, data, mapping)
+
+
+def github_pull_request_merge(parser, xml_parent, data):
+    """yaml: github-pull-request-merge
+    This action merges the pull request that triggered the build (see the
+    github pull request trigger)
+    Requires the Jenkins :jenkins-wiki:`GitHub pull request builder plugin
+    <GitHub+pull+request+builder+plugin>
+
+
+    :arg bool only-admins-merge: if `true` only administrators can merge the
+        pull request, (default false)
+    :arg bool disallow-own-code: if `true` will allow merging your own pull
+        requests, in opposite to needing someone else to trigger the merge.
+        (default false)
+    :arg bool merge-comment: Comment to set on the merge commit (optional)
+    :arg bool fail-on-non-merge: fail the job if the merge was unsuccessful
+        (default false)
+    :arg bool delete-on-merge: Delete the branch of the pull request on
+        successful merge (default false)
+
+    Full Example:
+
+    .. literalinclude::
+        ../../tests/publishers/fixtures/github-pull-request-merge001.yaml
+       :language: yaml
+
+    Minimal Example:
+
+    .. literalinclude::
+        ../../tests/publishers/fixtures/github-pull-request-merge002.yaml
+       :language: yaml
+    """
+
+    osb = XML.SubElement(xml_parent,
+                         'org.jenkinsci.plugins.ghprb.GhprbPullRequestMerge')
+    mapping = [
+        # option, xml name, default value
+        ("only-admins-merge", 'onlyAdminsMerge', 'false'),
+        ("disallow-own-code", 'disallowOwnCode', 'false'),
+        ("merge-comment", 'mergeComment', None),
+        ("fail-on-non-merge", 'failOnNonMerge', 'false'),
+        ("delete-on-merge", 'deleteOnMerge', 'false'),
     ]
 
     convert_mapping_to_xml(osb, data, mapping)
