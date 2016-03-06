@@ -25,24 +25,9 @@ For now only inline scripts are supported.
 
 Requires the Jenkins :jenkins-wiki:`Workflow Plugin <Workflow+Plugin>`.
 
-In order to use it for job-template you have to escape the curly braces by
-doubling them in the DSL: { -> {{ , otherwise it will be interpreted by the
-python str.format() command.
-
-:Job Parameters:
-    * **dsl** (`str`): The DSL content.
-    * **sandbox** (`bool`): If the script should run in a sandbox (default
-      false)
-
-Job example:
-
-    .. literalinclude::
-      /../../tests/yamlparser/fixtures/project_workflow_template001.yaml
-
-Job template example:
-
-    .. literalinclude::
-      /../../tests/yamlparser/fixtures/project_workflow_template002.yaml
+See dsl component for the main functionality and parameters.
+This project type has no builders or publishers, but does support wrappers and
+triggers.
 
 """
 import xml.etree.ElementTree as XML
@@ -57,17 +42,5 @@ class Workflow(jenkins_jobs.modules.base.Base):
     def root_xml(self, data):
         xml_parent = XML.Element('flow-definition',
                                  {'plugin': 'workflow-job'})
-        xml_definition = XML.SubElement(xml_parent, 'definition',
-                                        {'plugin': 'workflow-cps',
-                                         'class': 'org.jenkinsci.plugins.'
-                                         'workflow.cps.CpsFlowDefinition'})
-        try:
-            XML.SubElement(xml_definition, 'script').text = data['dsl']
-        except KeyError as e:
-            raise MissingAttributeError(e.arg[0])
-
-        needs_workspace = data.get('sandbox', False)
-        XML.SubElement(xml_definition, 'sandbox').text = str(
-            needs_workspace).lower()
 
         return xml_parent
