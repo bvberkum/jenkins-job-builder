@@ -82,6 +82,9 @@ class DSL(jenkins_jobs.modules.base.Base):
 
     def gen_xml(self, parser, xml_parent, data):
 
+        if not 'dsl' in data:
+            return
+
         dsl = data['dsl']
 
 
@@ -116,7 +119,6 @@ class DSL(jenkins_jobs.modules.base.Base):
                 xml_attribs = {'class': class_name}
                 xml_scm = XML.SubElement(xml_definition, 'scm', xml_attribs)
                 xml_scm.append(scms_parent)
-
 
 
 
