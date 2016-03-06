@@ -353,7 +353,7 @@ def execute(options, config):
 
 def version():
     return "Jenkins Job Builder version: %s" % \
-        jenkins_jobs.version.version_info.version_string()
+        jenkins_jobs.version.version_info.version_string_with_vcs()
 
 
 if __name__ == '__main__':
