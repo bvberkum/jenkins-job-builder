@@ -80,7 +80,7 @@ def gerrit_handle_legacy_configuration(data):
         'skipVote',
     ])
 
-    for project in data['projects']:
+    for project in data.get('projects', []):
         convert_dict(project, [
             'projectCompareType',
             'projectPattern',
@@ -443,7 +443,7 @@ def gerrit(parser, xml_parent, data):
 
     gerrit_handle_legacy_configuration(data)
 
-    projects = data['projects']
+    projects = data.get('projects', [])
     gtrig = XML.SubElement(xml_parent,
                            'com.sonyericsson.hudson.plugins.gerrit.trigger.'
                            'hudsontrigger.GerritTrigger')
@@ -454,7 +454,8 @@ def gerrit(parser, xml_parent, data):
                                'com.sonyericsson.hudson.plugins.gerrit.'
                                'trigger.hudsontrigger.data.GerritProject')
         XML.SubElement(gproj, 'compareType').text = get_compare_type(
-            'project-compare-type', project['project-compare-type'])
+            'project-compare-type', project.get(
+                'project-compare-type', 'PLAIN'))
         XML.SubElement(gproj, 'pattern').text = project['project-pattern']
 
         branches = XML.SubElement(gproj, 'branches')
@@ -472,14 +473,16 @@ def gerrit(parser, xml_parent, data):
             logger.warn(warning)
         if not project_branches:
             project_branches = [
-                {'branch-compare-type': project['branch-compare-type'],
+                {'branch-compare-type': project.get(
+                    'branch-compare-type', 'PLAIN'),
                  'branch-pattern': project['branch-pattern']}]
         for branch in project_branches:
             gbranch = XML.SubElement(
                 branches, 'com.sonyericsson.hudson.plugins.'
                 'gerrit.trigger.hudsontrigger.data.Branch')
             XML.SubElement(gbranch, 'compareType').text = get_compare_type(
-                'branch-compare-type', branch['branch-compare-type'])
+                'branch-compare-type', branch.get(
+                    'branch-compare-type', 'PLAIN'))
             XML.SubElement(gbranch, 'pattern').text = branch['branch-pattern']
 
         project_file_paths = project.get('file-paths', [])
@@ -1467,7 +1470,7 @@ def script(parser, xml_parent, data):
 
     Example:
 
-    .. literalinclude:: /../../tests/triggers/fixtures/script.yaml
+    .. literalinclude:: /../../tests/triggers/fixtures/script001.yaml
     """
     data = data if data else {}
     st = XML.SubElement(

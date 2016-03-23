@@ -313,38 +313,57 @@ def authorization(parser, xml_parent, data):
         the list of rights to grant.
 
        :<name> rights:
-            * **job-delete**
-            * **job-configure**
-            * **job-read**
-            * **job-extended-read**
-            * **job-discover**
+            * **credentials-create**
+            * **credentials-delete**
+            * **credentials-manage-domains**
+            * **credentials-update**
+            * **credentials-view**
             * **job-build**
-            * **job-workspace**
             * **job-cancel**
+            * **job-configure**
+            * **job-delete**
+            * **job-discover**
+            * **job-extended-read**
+            * **job-move**
+            * **job-read**
+            * **job-status**
+            * **job-workspace**
+            * **ownership-jobs**
             * **run-delete**
             * **run-update**
             * **scm-tag**
 
+    .. _authorization:
+
     Example:
 
-    .. literalinclude::
-        /../../tests/properties/fixtures/authorization_matrix.yaml
+    .. literalinclude:: /../../tests/properties/fixtures/authorization.yaml
        :language: yaml
-
     """
 
+    credentials = 'com.cloudbees.plugins.credentials.CredentialsProvider.'
+    ownership = 'com.synopsys.arc.jenkins.plugins.ownership.OwnershipPlugin.'
+
     mapping = {
-        'job-delete': 'hudson.model.Item.Delete',
-        'job-configure': 'hudson.model.Item.Configure',
-        'job-read': 'hudson.model.Item.Read',
-        'job-extended-read': 'hudson.model.Item.ExtendedRead',
-        'job-discover': 'hudson.model.Item.Discover',
+        'credentials-create': ''.join((credentials, 'Create')),
+        'credentials-delete': ''.join((credentials, 'Delete')),
+        'credentials-manage-domains': ''.join((credentials, 'ManageDomains')),
+        'credentials-update': ''.join((credentials, 'Update')),
+        'credentials-view': ''.join((credentials, 'View')),
         'job-build': 'hudson.model.Item.Build',
-        'job-workspace': 'hudson.model.Item.Workspace',
         'job-cancel': 'hudson.model.Item.Cancel',
+        'job-configure': 'hudson.model.Item.Configure',
+        'job-delete': 'hudson.model.Item.Delete',
+        'job-discover': 'hudson.model.Item.Discover',
+        'job-extended-read': 'hudson.model.Item.ExtendedRead',
+        'job-move': 'hudson.model.Item.Move',
+        'job-read': 'hudson.model.Item.Read',
+        'job-status': 'hudson.model.Item.ViewStatus',
+        'job-workspace': 'hudson.model.Item.Workspace',
+        'ownership-jobs': ''.join((ownership, 'Jobs')),
         'run-delete': 'hudson.model.Run.Delete',
         'run-update': 'hudson.model.Run.Update',
-        'scm-tag': 'hudson.scm.SCM.Tag'
+        'scm-tag': 'hudson.scm.SCM.Tag',
     }
 
     if data:
@@ -648,7 +667,7 @@ def slack(parser, xml_parent, data):
     Example:
 
     .. literalinclude::
-        /../../tests/properties/slack001.yaml
+        /../../tests/properties/fixtures/slack001.yaml
         :language: yaml
     """
     def _add_xml(elem, name, value):
@@ -708,6 +727,40 @@ def rebuild(parser, xml_parent, data):
         data.get('auto-rebuild', False)).lower()
     XML.SubElement(sub_element, 'rebuildDisabled').text = str(
         data.get('rebuild-disabled', False)).lower()
+
+
+def build_discarder(parser, xml_parent, data):
+    """yaml: build-discarder
+
+    :arg int days-to-keep: Number of days to keep builds for (default -1)
+    :arg int num-to-keep: Number of builds to keep (default -1)
+    :arg int artifact-days-to-keep: Number of days to keep builds with
+        artifacts (default -1)
+    :arg int artifact-num-to-keep: Number of builds with artifacts to keep
+        (default -1)
+
+    Example:
+
+    .. literalinclude::
+        /../../tests/properties/fixtures/build-discarder-001.yaml
+       :language: yaml
+
+    .. literalinclude::
+        /../../tests/properties/fixtures/build-discarder-002.yaml
+       :language: yaml
+    """
+    base_sub = XML.SubElement(xml_parent,
+                              'jenkins.model.BuildDiscarderProperty')
+    strategy = XML.SubElement(base_sub, 'strategy')
+    strategy.set('class', 'hudson.tasks.LogRotator')
+    days = XML.SubElement(strategy, 'daysToKeep')
+    days.text = str(data.get('days-to-keep', -1))
+    num = XML.SubElement(strategy, 'numToKeep')
+    num.text = str(data.get('num-to-keep', -1))
+    adays = XML.SubElement(strategy, 'artifactDaysToKeep')
+    adays.text = str(data.get('artifact-days-to-keep', -1))
+    anum = XML.SubElement(strategy, 'artifactNumToKeep')
+    anum.text = str(data.get('artifact-num-to-keep', -1))
 
 
 class Properties(jenkins_jobs.modules.base.Base):
