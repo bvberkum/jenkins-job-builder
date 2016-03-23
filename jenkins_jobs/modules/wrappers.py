@@ -1968,6 +1968,27 @@ def artifactory_maven_freestyle(parser, xml_parent, data):
     artifactory_optional_props(artifactory, data, 'wrappers')
 
 
+def buildaliassetter(parser, xml_parent, data):
+
+    """yaml: buildaliassetter
+    Create URL aliases for specific builds, these are listed at the Job page
+    and link to a specific build.
+
+    :arg list buildaliases: A list of build aliases to create.
+    """
+
+    xwrapper = XML.SubElement(xml_parent,
+            'org.jenkinsci.plugins.buildaliassetter.BuildAliasSetter')
+    providers = XML.SubElement(xwrapper, 'providers')
+
+    buildaliases = data.get('buildaliases')
+    for alias in buildaliases:
+        TokenMacroAliasProvider = XML.SubElement(providers,
+                'org.jenkinsci.plugins.buildaliassetter.TokenMacroAliasProvider')
+        template = XML.SubElement(TokenMacroAliasProvider, 'template')
+        template.text = str(alias)
+
+
 class Wrappers(jenkins_jobs.modules.base.Base):
     sequence = 80
 
