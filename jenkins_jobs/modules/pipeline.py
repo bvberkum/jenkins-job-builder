@@ -14,7 +14,7 @@
 
 
 """
-The `dsl` module supports the attributes for The Pipeline (formerly Workflow)
+The `pipeline` module supports the dsl attribute for The Pipeline (formerly Workflow)
 projects, either using verbatim pipeline DSL script, or by (multi-)SCM.
 
 **Component**: dsl
@@ -97,6 +97,7 @@ class DSL(jenkins_jobs.modules.base.Base):
         xml_definition = XML.SubElement(xml_parent, 'definition',
                                         {'plugin': 'workflow-cps',
                                          'class': class_})
+
         needs_workspace = data.get('sandbox', False)
         XML.SubElement(xml_definition, 'sandbox').text = str(
             needs_workspace).lower()
