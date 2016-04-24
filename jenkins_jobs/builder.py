@@ -158,7 +158,7 @@ class Jenkins(object):
 
     def get_job_md5(self, job_name):
         xml = self.jenkins.get_job_config(job_name)
-        return hashlib.md5(xml).hexdigest()
+        return hashlib.md5(xml.encode('utf-8')).hexdigest()
 
     def delete_job(self, job_name):
         if self.is_job(job_name):
@@ -350,12 +350,15 @@ class Builder(object):
                     raise
 
         if output:
+            # ensure only wrapped once
+            if hasattr(output, 'write'):
+                output = utils.wrap_stream(output)
+
             for job in self.parser.xml_jobs:
                 if hasattr(output, 'write'):
                     # `output` is a file-like object
                     logger.info("Job name:  %s", job.name)
                     logger.debug("Writing XML to '{0}'".format(output))
-                    output = utils.wrap_stream(output)
                     try:
                         output.write(job.output())
                     except IOError as exc:

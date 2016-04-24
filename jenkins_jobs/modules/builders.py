@@ -1461,14 +1461,15 @@ def maven_builder(parser, xml_parent, data):
     """yaml: maven-builder
     Execute Maven3 builder
 
+    Allows your build jobs to deploy artifacts automatically to Artifactory.
+
+    Requires the Jenkins :jenkins-wiki:`Artifactory Plugin
+    <Artifactory+Plugin>`.
+
     :arg str name: Name of maven installation from the configuration
     :arg str pom: Location of pom.xml (default 'pom.xml')
     :arg str goals: Goals to execute
     :arg str maven-opts: Additional options for maven (optional)
-
-    Requires the Jenkins `Artifactory Plugin
-    <https://wiki.jenkins-ci.org/display/JENKINS/Artifactory+Plugin>`_
-    allows your build jobs to deploy artifacts automatically to Artifactory.
 
     Example:
 
@@ -1490,7 +1491,11 @@ def maven_builder(parser, xml_parent, data):
 
 def maven_target(parser, xml_parent, data):
     """yaml: maven-target
-    Execute top-level Maven targets
+    Execute top-level Maven targets.
+
+    Requires the Jenkins :jenkins-wiki:`Config File Provider Plugin
+    <Config+File+Provider+Plugin>` for the Config File Provider "settings"
+    and "global-settings" config.
 
     :arg str goals: Goals to execute
     :arg str properties: Properties for maven, can have multiples
@@ -1507,10 +1512,6 @@ def maven_target(parser, xml_parent, data):
     :arg str global-settings: Path to use as global settings.xml
         It is possible to provide a ConfigFileProvider settings file, such as
         see CFP Example below. (optional)
-
-    Requires the Jenkins `Config File Provider Plugin
-    <https://wiki.jenkins-ci.org/display/JENKINS/Config+File+Provider+Plugin>`_
-    for the Config File Provider "settings" and "global-settings" config.
 
     Example:
 
@@ -1548,7 +1549,7 @@ def multijob(parser, xml_parent, data):
 
     :arg str name: MultiJob phase name
     :arg str condition: when to trigger the other job.
-        Can be: 'SUCCESSFUL', 'UNSTABLE', 'COMPLETED', 'FAILURE'.
+        Can be: 'SUCCESSFUL', 'UNSTABLE', 'COMPLETED', 'FAILURE', 'ALWAYS'.
         (default 'SUCCESSFUL')
 
     :arg list projects: list of projects to include in the MultiJob phase
@@ -1563,6 +1564,8 @@ def multijob(parser, xml_parent, data):
             * **node-label** (`str`) -- Define a label
               of 'Restrict where this project can be run' on the fly.
               Requires NodeLabel Parameter Plugin (optional)
+            * **node-parameters** (`bool`) -- Use the same Node for
+              the triggered builds that was used for this build. (optional)
             * **git-revision** (`bool`) -- Pass current git-revision
               to the other job (default false)
             * **property-file** (`str`) -- Pass properties from file
@@ -1590,7 +1593,8 @@ def multijob(parser, xml_parent, data):
     XML.SubElement(builder, 'phaseName').text = data['name']
 
     condition = data.get('condition', 'SUCCESSFUL')
-    conditions_available = ('SUCCESSFUL', 'UNSTABLE', 'COMPLETED', 'FAILURE')
+    conditions_available = ('SUCCESSFUL', 'UNSTABLE', 'COMPLETED', 'FAILURE',
+                            'ALWAYS')
     if condition not in conditions_available:
         raise JenkinsJobsException('Multijob condition must be one of: %s.'
                                    % ', '.join(conditions_available))
@@ -1621,6 +1625,11 @@ def multijob(parser, xml_parent, data):
                          'parameterizedtrigger.NodeLabelBuildParameter')
             XML.SubElement(node, 'name').text = nodeLabelName
             XML.SubElement(node, 'nodeLabel').text = nodeLabel
+
+        # Node parameter
+        if project.get('node-parameters', False):
+            XML.SubElement(configs, 'hudson.plugins.parameterizedtrigger.'
+                                    'NodeParameters')
 
         # Git Revision
         if project.get('git-revision', False):
@@ -2074,8 +2083,8 @@ def managed_script(parser, xml_parent, data):
 
 def cmake(parser, xml_parent, data):
     """yaml: cmake
-    Execute a CMake target. Requires the Hudson `cmakebuilder Plugin.
-    <http://wiki.hudson-ci.org/display/HUDSON/cmakebuilder+Plugin>`_
+    Execute a CMake target. Requires the Jenkins `CMake Plugin
+    <CMake+Plugin>`.
 
     :arg str source-dir: the source code directory relative to the workspace
         directory. (required)
@@ -2296,8 +2305,7 @@ def github_notifier(parser, xml_parent, data):
 def ssh_builder(parser, xml_parent, data):
     """yaml: ssh-builder
     Executes command on remote host
-    Requires the Jenkins `SSH plugin.
-    <https://wiki.jenkins-ci.org/display/JENKINS/SSH+plugin>`_
+    Requires the Jenkins :jenkins-wiki:`SSH plugin <SSH+plugin>`.
 
     :arg str ssh-user-ip: user@ip:ssh_port of machine that was defined
         in jenkins according to SSH plugin instructions
@@ -2321,7 +2329,10 @@ def sonar(parser, xml_parent, data):
     """yaml: sonar
     Invoke standalone Sonar analysis.
     Requires the Jenkins `Sonar Plugin.
-    <http://docs.codehaus.org/pages/viewpage.action?pageId=116359341>`_
+    <http://docs.sonarqube.org/display/SCAN/\
+        Analyzing+with+SonarQube+Scanner+for+Jenkins\
+        #AnalyzingwithSonarQubeScannerforJenkins-\
+        AnalyzingwiththeSonarQubeScanner>`_
 
     :arg str sonar-name: Name of the Sonar installation.
     :arg str task: Task to run. (optional)
@@ -2884,8 +2895,7 @@ def openshift_svc_verify(parser, xml_parent, data):
 def runscope(parser, xml_parent, data):
     """yaml: runscope
     Execute a Runscope test.
-    Requires the Jenkins `Runscope Plugin.
-    <https://wiki.jenkins-ci.org/display/JENKINS/Runscope+Plugin>`_
+    Requires the Jenkins :jenkins-wiki:`Runscope Plugin <Runscope+Plugin>`.
 
     :arg str test-trigger-url: Trigger URL for test. (required)
     :arg str access-token: OAuth Personal Access token. (required)
@@ -2933,3 +2943,91 @@ def description_setter(parser, xml_parent, data):
     if 'description' in data:
         XML.SubElement(descriptionsetter, 'description').text = data[
             'description']
+
+
+def docker_build_publish(parse, xml_parent, data):
+    """yaml: docker-build-publish
+    Requires the Jenkins :jenkins-wiki`Docker build publish Plugin
+    <Docker+build+publish+Plugin>`.
+
+    :arg str repo-name: Name of repository to push to.
+    :arg str repo-tag: Tag for image. (default '')
+    :arg bool no-cache: If build should be cached. (default false)
+    :arg bool no-force-pull: Don't update the source image before building when
+        it exists locally. (default false)
+    :arg bool skip-build: Do not build the image. (default false)
+    :arg bool skip-decorate: Do not decorate the build name. (default false)
+    :arg bool skip-tag-latest: Do not tag this build as latest. (default false)
+    :arg bool skip-push: Do not push. (default false)
+    :arg str file-path: Project root of Dockerfile. (default '')
+
+    Example:
+
+    .. literalinclude:: /../../tests/builders/fixtures/docker-builder001.yaml
+    """
+    db = XML.SubElement(xml_parent,
+                        'com.cloudbees.dockerpublish.DockerBuilder')
+    db.set('plugin', 'docker-build-publish')
+
+    try:
+        XML.SubElement(db, 'repoName').text = str(data['repo-name'])
+    except KeyError:
+        raise MissingAttributeError('repo-name')
+
+    XML.SubElement(db, 'repoTag').text = str(data.get('repo-tag', ''))
+    XML.SubElement(db, 'noCache').text = str(
+        data.get('no-cache', False)).lower()
+    XML.SubElement(db, 'noForcePull').text = str(
+        data.get('no-force-pull', False)).lower()
+    XML.SubElement(db, 'skipBuild').text = str(
+        data.get('skip-build', False)).lower()
+    XML.SubElement(db, 'skipDecorate').text = str(
+        data.get('skip-decorate', False)).lower()
+    XML.SubElement(db, 'skipTagLatest').text = str(
+        data.get('skip-tag-latest', False)).lower()
+    XML.SubElement(db, 'skipPush').text = str(
+        data.get('skip-', False)).lower()
+    XML.SubElement(db, 'dockerfilePath').text = str(
+        data.get('file-path', ''))
+
+
+def build_name_setter(parser, xml_parent, data):
+    """yaml: build-name-setter
+    Define Build Name Setter options which allows your build name to be
+    updated during the build process.
+    Requires the Jenkins :jenkins-wiki:`Build Name Setter Plugin
+    <Build+Name+Setter+Plugin>`.
+
+    :arg str name: Filename to use for Build Name Setter, only used if
+        file bool is true. (default 'version.txt')
+    :arg str template: Macro Template string, only used if macro
+        bool is true. (default '#${BUILD_NUMBER}')
+    :arg bool file: Read from named file (default false)
+    :arg bool macro: Read from macro template (default false)
+    :arg bool macro-first: Insert macro first (default false)
+
+    File Example:
+
+    .. literalinclude::
+        /../../tests/builders/fixtures/build-name-setter001.yaml
+       :language: yaml
+
+    Macro Example:
+
+    .. literalinclude::
+        /../../tests/builders/fixtures/build-name-setter002.yaml
+       :language: yaml
+    """
+    build_name_setter = XML.SubElement(
+        xml_parent,
+        'org.jenkinsci.plugins.buildnameupdater.BuildNameUpdater')
+    XML.SubElement(build_name_setter, 'buildName').text = data.get(
+        'name', 'version.txt')
+    XML.SubElement(build_name_setter, 'macroTemplate').text = data.get(
+        'template', '#${BUILD_NUMBER}')
+    XML.SubElement(build_name_setter, 'fromFile').text = str(
+        data.get('file', False)).lower()
+    XML.SubElement(build_name_setter, 'fromMacro').text = str(
+        data.get('macro', False)).lower()
+    XML.SubElement(build_name_setter, 'macroFirst').text = str(
+        data.get('macro-first', False)).lower()

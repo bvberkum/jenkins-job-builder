@@ -43,6 +43,117 @@ logger = logging.getLogger(__name__)
 MIN_TO_SEC = 60
 
 
+def docker_custom_build_env(parser, xml_parent, data):
+    """yaml: docker-custom-build-env
+    Allows the definition of a build environment for a job using a Docker
+    container.
+    Requires the Jenkins :jenkins-wiki:`CloudBees Docker Custom Build
+    Environment Plugin<CloudBees+Docker+Custom+Build+Environment+Plugin>`.
+
+    :arg str image-type: Docker image type. Valid values and their
+        additional attributes described in the image_types_ table
+    :arg str docker-tool: The name of the docker installation to use
+        (default 'Default')
+    :arg str host: URI to the docker host you are using
+    :arg str credentials-id: Argument to specify the ID of credentials to use
+        for docker host (optional)
+    :arg str registry-credentials-id: Argument to specify the ID of
+        credentials to use for docker registry (optional)
+    :arg list volumes: Volumes to bind mound from slave host into container
+
+        :volume: * **host-path** (`str`) Path on host
+                 * **path** (`str`) Path inside container
+
+    :arg bool verbose: Log docker commands executed by plugin on build log
+        (default false)
+    :arg bool privileged: Run in privileged mode (default false)
+    :arg bool force-pull: Force pull (default false)
+    :arg str group: The user to run build has to be the same as the Jenkins
+        slave user so files created in workspace have adequate owner and
+        permission set
+    :arg str command: Container start command (default '/bin/cat')
+    :arg str net: Network bridge (default 'bridge')
+
+    .. _image_types:
+
+    ================== ====================================================
+    Image Type         Description
+    ================== ====================================================
+    dockerfile         Build docker image from a Dockerfile in project
+                       workspace. With this option, project can define the
+                       build environment as a Dockerfile stored in SCM with
+                       project source code
+
+                         :context-path: (str) Path to docker context
+                           (default '.')
+                         :dockerfile: (str) Use an alternate Dockerfile to
+                           build the container hosting this build
+                           (default 'Dockerfile')
+    pull               Pull specified docker image from Docker repository
+
+                         :image: (str) Image id/tag
+    ================== ====================================================
+
+    Example:
+
+    .. literalinclude::
+        /../../tests/wrappers/fixtures/docker-custom-build-env001.yaml
+       :language: yaml
+    """
+    core_prefix = 'com.cloudbees.jenkins.plugins.okidocki.'
+    entry_xml = XML.SubElement(
+        xml_parent, core_prefix + 'DockerBuildWrapper')
+    entry_xml.set('plugin', 'docker-custom-build-environment')
+
+    selectorobj = XML.SubElement(entry_xml, 'selector')
+    image_type = data['image-type']
+    if image_type == 'dockerfile':
+        selectorobj.set('class', core_prefix + 'DockerfileImageSelector')
+        XML.SubElement(selectorobj, 'contextPath').text = data.get(
+            'context-path', '.')
+        XML.SubElement(selectorobj, 'dockerfile').text = data.get(
+            'dockerfile', 'Dockerfile')
+    elif image_type == 'pull':
+        selectorobj.set('class', core_prefix + 'PullDockerImageSelector')
+        XML.SubElement(selectorobj, 'image').text = data.get(
+            'image', '')
+
+    XML.SubElement(entry_xml, 'dockerInstallation').text = data.get(
+        'docker-tool', 'Default')
+
+    host = XML.SubElement(entry_xml, 'dockerHost')
+    host.set('plugin', 'docker-commons')
+    if data.get('host'):
+        XML.SubElement(host, 'uri').text = data['host']
+    if data.get('credentials-id'):
+        XML.SubElement(host, 'credentialsId').text = data['credentials-id']
+    XML.SubElement(entry_xml, 'dockerRegistryCredentials').text = data.get(
+        'registry-credentials-id', '')
+
+    volumesobj = XML.SubElement(entry_xml, 'volumes')
+    volumes = data.get('volumes', [])
+    if not volumes:
+        volumesobj.set('class', 'empty-list')
+    else:
+        for volume in volumes:
+            volumeobj = XML.SubElement(
+                volumesobj, 'com.cloudbees.jenkins.plugins.okidocki.Volume')
+            XML.SubElement(volumeobj, 'hostPath').text = volume['volume'].get(
+                'host-path', '')
+            XML.SubElement(volumeobj, 'path').text = volume['volume'].get(
+                'path', '')
+
+    XML.SubElement(entry_xml, 'forcePull').text = str(data.get(
+        'force-pull', False)).lower()
+    XML.SubElement(entry_xml, 'privileged').text = str(data.get(
+        'privileged', False)).lower()
+    XML.SubElement(entry_xml, 'verbose').text = str(data.get(
+        'verbose', False)).lower()
+    XML.SubElement(entry_xml, 'group').text = data.get('group', '')
+    XML.SubElement(entry_xml, 'command').text = data.get('command', '/bin/cat')
+    XML.SubElement(entry_xml, 'net').text = data.get('net', 'bridge')
+
+
 def ci_skip(parser, xml_parent, data):
     """yaml: ci-skip
     Skip making a build for certain push.
@@ -332,6 +443,79 @@ def ansicolor(parser, xml_parent, data):
         XML.SubElement(cwrapper, 'colorMapName').text = colormap
 
 
+def build_keeper(parser, xml_parent, data):
+    """yaml: build-keeper
+    Keep builds based on specific policy.
+    Requires the Jenkins :jenkins-wiki:`Build Keeper Plugin
+    <Build+Keeper+Plugin>`.
+
+    :arg str policy: Policy to keep builds.
+
+        :policy values:
+          * **by-day**
+          * **keep-since**
+          * **build-number**
+          * **keep-first-failed**
+    :arg int build-period: Number argument to calculate build to keep,
+        depends on the policy. (default 0)
+    :arg bool dont-keep-failed: Flag to indicate if to keep failed builds.
+        (default False)
+    :arg int number-of-fails: number of consecutive failed builds in order
+        to mark first as keep forever, only applies to keep-first-failed
+        policy (default 0)
+
+    Example:
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/build-keeper0001.yaml
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/build-keeper0002.yaml
+
+    """
+
+    root = XML.SubElement(xml_parent,
+                          'org.jenkins__ci.plugins.build__keeper.BuildKeeper')
+
+    valid_policies = ('by-day', 'keep-since', 'build-number',
+                      'keep-first-failed')
+    policy = data.get('policy')
+    build_period = str(data.get('build-period', 0))
+    dont_keep_failed = str(data.get('dont-keep-failed', False)).lower()
+
+    if policy == 'by-day':
+        policy_element = XML.SubElement(root,
+                                        'policy',
+                                        {'class': 'org.jenkins_ci.plugins.'
+                                         'build_keeper.ByDayPolicy'})
+        XML.SubElement(policy_element, 'buildPeriod').text = build_period
+        XML.SubElement(policy_element,
+                       'dontKeepFailed').text = dont_keep_failed
+    elif policy == 'keep-since':
+        policy_element = XML.SubElement(root,
+                                        'policy',
+                                        {'class': 'org.jenkins_ci.plugins.'
+                                         'build_keeper.KeepSincePolicy'})
+        XML.SubElement(policy_element, 'buildPeriod').text = build_period
+        XML.SubElement(policy_element,
+                       'dontKeepFailed').text = dont_keep_failed
+    elif policy == 'build-number':
+        policy_element = XML.SubElement(root,
+                                        'policy',
+                                        {'class': 'org.jenkins_ci.plugins.'
+                                         'build_keeper.BuildNumberPolicy'})
+        XML.SubElement(policy_element, 'buildPeriod').text = build_period
+        XML.SubElement(policy_element,
+                       'dontKeepFailed').text = dont_keep_failed
+    elif policy == 'keep-first-failed':
+        policy_element = XML.SubElement(root,
+                                        'policy',
+                                        {'class': 'org.jenkins_ci.plugins.'
+                                         'build_keeper.KeepFirstFailedPolicy'})
+        XML.SubElement(policy_element, 'numberOfFails').text = str(
+            data.get('number-of-fails', 0))
+    else:
+        InvalidAttributeError('policy', policy, valid_policies)
+
+
 def live_screenshot(parser, xml_parent, data):
     """yaml: live-screenshot
     Show live screenshots of running jobs in the job list.
@@ -498,10 +682,10 @@ def rbenv(parser, xml_parent, data):
         (default: 'bundler,rake')
     :arg str rbenv-root: RBENV_ROOT  (default: $HOME/.rbenv)
     :arg str rbenv-repo: Which repo to clone rbenv from
-        (default: https://github.com/sstephenson/rbenv.git)
+        (default: https://github.com/rbenv/rbenv)
     :arg str rbenv-branch: Which branch to clone rbenv from  (default: master)
     :arg str ruby-build-repo: Which repo to clone ruby-build from
-        (default: https://github.com/sstephenson/ruby-build.git)
+        (default: https://github.com/rbenv/ruby-build)
     :arg str ruby-build-branch: Which branch to clone ruby-build from
         (default: master)
 
@@ -515,10 +699,10 @@ def rbenv(parser, xml_parent, data):
         ("preinstall-gem-list", 'gem__list', 'bundler,rake'),
         ("rbenv-root", 'rbenv__root', '$HOME/.rbenv'),
         ("rbenv-repo", 'rbenv__repository',
-            'https://github.com/sstephenson/rbenv.git'),
+            'https://github.com/rbenv/rbenv'),
         ("rbenv-branch", 'rbenv__revision', 'master'),
         ("ruby-build-repo", 'ruby__build__repository',
-            'https://github.com/sstephenson/ruby-build.git'),
+            'https://github.com/rbenv/ruby-build'),
         ("ruby-build-branch", 'ruby__build__revision', 'master'),
         ("ruby-version", 'version', '1.9.3-p484'),
     ]
@@ -1708,7 +1892,7 @@ def artifactory_maven(parser, xml_parent, data):
     :jenkins-wiki:`Artifactory Plugin <Artifactory+Plugin>`
 
     :arg str url: URL of the Artifactory server. e.g.
-        http://www.jfrog.com/artifactory/ (default '')
+        https://www.jfrog.com/artifactory/ (default '')
     :arg str name: Artifactory user with permissions use for
         connected to the selected Artifactory Server
         (default '')
@@ -1753,7 +1937,7 @@ def artifactory_generic(parser, xml_parent, data):
     :jenkins-wiki:`Artifactory Plugin <Artifactory+Plugin>`
 
     :arg str url: URL of the Artifactory server. e.g.
-        http://www.jfrog.com/artifactory/ (default: '')
+        https://www.jfrog.com/artifactory/ (default: '')
     :arg str name: Artifactory user with permissions use for
         connected to the selected Artifactory Server
         (default '')
@@ -1830,7 +2014,7 @@ def artifactory_maven_freestyle(parser, xml_parent, data):
     Requires :jenkins-wiki:`Artifactory Plugin <Artifactory+Plugin>`
 
     :arg str url: URL of the Artifactory server. e.g.
-        http://www.jfrog.com/artifactory/ (default: '')
+        https://www.jfrog.com/artifactory/ (default: '')
     :arg str name: Artifactory user with permissions use for
         connected to the selected Artifactory Server (default '')
     :arg str release-repo-key: Release repository name (default '')
