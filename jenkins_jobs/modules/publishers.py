@@ -38,6 +38,7 @@ from jenkins_jobs.errors import JenkinsJobsException
 from jenkins_jobs.errors import MissingAttributeError
 import jenkins_jobs.modules.base
 from jenkins_jobs.modules import hudson_model
+from jenkins_jobs.modules.helpers import append_git_revision_config
 from jenkins_jobs.modules.helpers import artifactory_common_details
 from jenkins_jobs.modules.helpers import artifactory_deployment_patterns
 from jenkins_jobs.modules.helpers import artifactory_env_vars_patterns
@@ -350,9 +351,18 @@ def trigger_parameterized_builds(parser, xml_parent, data):
     :arg bool svn-revision: Pass svn revision to the triggered job (optional)
     :arg bool include-upstream: Include/pass through Upstream SVN Revisons.
         Only valid when 'svn-revision' is true. (default false)
-    :arg bool git-revision: Pass git revision to the other job (optional)
+    :arg dict git-revision: Passes git revision to the triggered job
+        (optional).
+
+        * **combine-queued-commits** (bool): Whether to combine queued git
+          hashes or not (default false)
+
     :arg bool combine-queued-commits: Combine Queued git hashes. Only valid
         when 'git-revision' is true. (default false)
+
+        .. deprecated:: 1.5.0 Please use `combine-queued-commits` under the
+            `git-revision` argument instead.
+
     :arg dict boolean-parameters: Pass boolean parameters to the downstream
         jobs. Specify the name and boolean value mapping of the parameters.
         (optional)
@@ -446,11 +456,19 @@ def trigger_parameterized_builds(parser, xml_parent, data):
                 properties = XML.SubElement(params, 'properties')
                 properties.text = param_value
             elif param_type == 'git-revision' and param_value:
-                params = XML.SubElement(tconfigs,
-                                        'hudson.plugins.git.'
-                                        'GitRevisionBuildParameters')
-                XML.SubElement(params, 'combineQueuedCommits').text = str(
-                    project_def.get('combine-queued-commits', False)).lower()
+                if 'combine-queued-commits' in project_def:
+                    logger.warn(
+                        "'combine-queued-commit' has moved to reside under "
+                        "'git-revision' configuration, please update your "
+                        "configs as support for this will be removed."
+                    )
+                    git_revision = {
+                        'combine-queued-commits':
+                        project_def['combine-queued-commits']
+                    }
+                else:
+                    git_revision = project_def['git-revision']
+                append_git_revision_config(tconfigs, git_revision)
             elif param_type == 'property-file':
                 params = XML.SubElement(tconfigs,
                                         pt_prefix + 'FileBuildParameters')
@@ -1183,9 +1201,9 @@ def xunit(parser, xml_parent, data):
         configured framework. (default 3000)
     :arg list types: Frameworks to configure, and options. Supports the
         following: ``aunit``, ``boosttest``, ``checktype``, ``cpptest``,
-        ``cppunit``, ``ctest``, ``embunit``, ``fpcunit``, ``gtest``, ``junit``,
-        ``mstest``, ``nunit``, ``phpunit``, ``tusar``, ``unittest``,
-        and ``valgrind``.
+        ``cppunit``, ``ctest``, ``dotnettest``, ``embunit``, ``fpcunit``,
+        ``gtest``, ``junit``, ``mstest``, ``nunit``, ``phpunit``, ``tusar``,
+        ``unittest``, and ``valgrind``.
 
             The 'custom' type is not supported.
 
@@ -1219,6 +1237,7 @@ def xunit(parser, xml_parent, data):
         'cpptest': 'CppTestJunitHudsonTestType',
         'cppunit': 'CppUnitJunitHudsonTestType',
         'ctest': 'CTestType',
+        'dotnettest': 'XUnitDotNetTestType',  # since plugin v1.93
         'embunit': 'EmbUnitType',  # since plugin v1.84
         'fpcunit': 'FPCUnitJunitHudsonTestType',
         'gtest': 'GoogleTestType',
@@ -1489,6 +1508,8 @@ def checkstyle(parser, xml_parent, data):
     :arg bool do-not-resolve-relative-paths: (default false)
     :arg bool dont-compute-new: If set to false, computes new warnings based on
       the reference build (default true)
+    :arg bool use-previous-build-as-reference: determines whether to always
+        use the previous build as the reference build (Default false)
     :arg bool use-stable-build-as-reference: The number of new warnings will be
       calculated based on the last stable build, allowing reverts of unstable
       builds where the number of warnings was decreased. (default false)
@@ -1704,9 +1725,12 @@ def pipeline(parser, xml_parent, data):
 def email(parser, xml_parent, data):
     """yaml: email
     Email notifications on build failure.
+    Requires the Jenkins :jenkins-wiki:`Mailer Plugin
+    <Mailer>`.
+
 
     :arg str recipients: Space separated list of recipient email addresses
-      (optional)
+      (required)
     :arg bool notify-every-unstable-build: Send an email for every
       unstable build (default true)
     :arg bool send-to-individuals: Send an email to the individual
@@ -1714,14 +1738,21 @@ def email(parser, xml_parent, data):
 
     Example:
 
-    .. literalinclude::  /../../tests/publishers/fixtures/email001.yaml
+    .. literalinclude::
+       /../../tests/publishers/fixtures/email-minimal.yaml
+       :language: yaml
+
+    .. literalinclude::  /../../tests/publishers/fixtures/email-complete.yaml
        :language: yaml
     """
 
     # TODO: raise exception if this is applied to a maven job
     mailer = XML.SubElement(xml_parent,
                             'hudson.tasks.Mailer')
-    XML.SubElement(mailer, 'recipients').text = data.get('recipients', '')
+    try:
+        XML.SubElement(mailer, 'recipients').text = data['recipients']
+    except KeyError as e:
+        raise MissingAttributeError(e)
 
     # Note the logic reversal (included here to match the GUI
     if data.get('notify-every-unstable-build', True):
@@ -2567,6 +2598,8 @@ def workspace_cleanup(parser, xml_parent, data):
             * **not-built** (`bool`)  (default: true)
     :arg bool fail-build: Fail the build if the cleanup fails (default: true)
     :arg bool clean-parent: Cleanup matrix parent workspace (default: false)
+    :arg str external-deletion-command: external deletion command to run
+        against files and directories
 
     Example:
 
@@ -2577,7 +2610,7 @@ def workspace_cleanup(parser, xml_parent, data):
 
     p = XML.SubElement(xml_parent,
                        'hudson.plugins.ws__cleanup.WsCleanup')
-    p.set("plugin", "ws-cleanup@0.14")
+    p.set("plugin", "ws-cleanup")
     if "include" in data or "exclude" in data:
         patterns = XML.SubElement(p, 'patterns')
 
@@ -2595,6 +2628,8 @@ def workspace_cleanup(parser, xml_parent, data):
         str(data.get("dirmatch", False)).lower()
     XML.SubElement(p, 'cleanupMatrixParent').text = \
         str(data.get("clean-parent", False)).lower()
+    XML.SubElement(p, 'externalDelete').text = \
+        str(data.get('external-deletion-command', ''))
 
     mask = [('success', 'cleanWhenSuccess'),
             ('unstable', 'cleanWhenUnstable'),
@@ -3547,10 +3582,9 @@ def plot(parser, xml_parent, data):
 
     Requires the Jenkins :jenkins-wiki:`Plot Plugin <Plot+Plugin>`.
 
-    :arg str title: title for the graph
-                    (default: '')
-    :arg str yaxis: title of Y axis
-    :arg str group: name of the group to which the plot belongs
+    :arg str title: title for the graph (default: '')
+    :arg str yaxis: title of Y axis (default: '')
+    :arg str group: name of the group to which the plot belongs (required)
     :arg int num-builds: number of builds to plot across
                          (default: plot all builds)
     :arg str style:  Specifies the graph style of the plot
@@ -3681,16 +3715,16 @@ def plot(parser, xml_parent, data):
                 XML.SubElement(subserie, 'nodeTypeString').text = \
                     xpath_dict.get(xpathtype)
             XML.SubElement(subserie, 'fileType').text = serie.get('format')
-        XML.SubElement(plugin, 'group').text = plot['group']
-        XML.SubElement(plugin, 'useDescr').text = \
-            str(plot.get('use-description', False)).lower()
-        XML.SubElement(plugin, 'exclZero').text = \
-            str(plot.get('exclude-zero-yaxis', False)).lower()
-        XML.SubElement(plugin, 'logarithmic').text = \
-            str(plot.get('logarithmic-yaxis', False)).lower()
-        XML.SubElement(plugin, 'keepRecords').text = \
-            str(plot.get('keep-records', False)).lower()
-        XML.SubElement(plugin, 'numBuilds').text = plot.get('num-builds', '')
+
+        mappings = [
+            ('group', 'group', None),
+            ('use-description', 'useDescr', False),
+            ('exclude-zero-yaxis', 'exclZero', False),
+            ('logarithmic-yaxis', 'logarithmic', False),
+            ('keep-records', 'keepRecords', False),
+            ('num-builds', 'numBuilds', '')]
+        convert_mapping_to_xml(plugin, plot, mappings, fail_required=True)
+
         style_list = ['area', 'bar', 'bar3d', 'line', 'line3d', 'stackedArea',
                       'stackedbar', 'stackedbar3d', 'waterfall']
         style = plot.get('style', 'line')
@@ -3921,6 +3955,76 @@ def stash(parser, xml_parent, data):
     XML.SubElement(top, 'commitSha1').text = data.get('commit-sha1', '')
     XML.SubElement(top, 'includeBuildNumberInKey').text = str(
         data.get('include-build-number', False)).lower()
+
+
+def dependency_check(parser, xml_parent, data):
+    """yaml: dependency-check
+    Dependency-Check is an open source utility that identifies project
+    dependencies and checks if there are any known, publicly disclosed,
+    vulnerabilities.
+
+    Requires the Jenkins :jenkins-wiki:`OWASP Dependency-Check Plugin
+    <OWASP+Dependency-Check+Plugin>`.
+
+    :arg str pattern: Report filename pattern (optional)
+    :arg bool can-run-on-failed: Also runs for failed builds, instead of just
+      stable or unstable builds (default false)
+    :arg bool should-detect-modules: Determines if Ant or Maven modules should
+      be detected for all files that contain warnings (default false)
+    :arg int healthy: Sunny threshold (optional)
+    :arg int unhealthy: Stormy threshold (optional)
+    :arg str health-threshold: Threshold priority for health status
+      ('low', 'normal' or 'high', defaulted to 'low')
+    :arg dict thresholds: Mark build as failed or unstable if the number of
+      errors exceeds a threshold. (optional)
+
+        :thresholds:
+            * **unstable** (`dict`)
+                :unstable: * **total-all** (`int`)
+                           * **total-high** (`int`)
+                           * **total-normal** (`int`)
+                           * **total-low** (`int`)
+                           * **new-all** (`int`)
+                           * **new-high** (`int`)
+                           * **new-normal** (`int`)
+                           * **new-low** (`int`)
+
+            * **failed** (`dict`)
+                :failed: * **total-all** (`int`)
+                         * **total-high** (`int`)
+                         * **total-normal** (`int`)
+                         * **total-low** (`int`)
+                         * **new-all** (`int`)
+                         * **new-high** (`int`)
+                         * **new-normal** (`int`)
+                         * **new-low** (`int`)
+    :arg str default-encoding: Encoding for parsing or showing files (optional)
+    :arg bool do-not-resolve-relative-paths: (default false)
+    :arg bool dont-compute-new: If set to false, computes new warnings based on
+      the reference build (default true)
+    :arg bool use-previous-build-as-reference: determines whether to always
+        use the previous build as the reference build (Default false)
+    :arg bool use-stable-build-as-reference: The number of new warnings will be
+      calculated based on the last stable build, allowing reverts of unstable
+      builds where the number of warnings was decreased. (default false)
+    :arg bool use-delta-values: If set then the number of new warnings is
+      calculated by subtracting the total number of warnings of the current
+      build from the reference build.
+      (default false)
+
+    Example:
+
+    .. literalinclude::
+        /../../tests/publishers/fixtures/dependency-check001.yaml
+       :language: yaml
+    """
+
+    dependency_check = XML.SubElement(
+        xml_parent,
+        'org.jenkinsci.plugins.DependencyCheck.DependencyCheckPublisher')
+
+    # trends
+    build_trends_publisher('[DEPENDENCYCHECK] ', dependency_check, data)
 
 
 def description_setter(parser, xml_parent, data):
@@ -4379,6 +4483,8 @@ def pmd(parser, xml_parent, data):
     :arg bool do-not-resolve-relative-paths: (default false)
     :arg bool dont-compute-new: If set to false, computes new warnings based on
       the reference build (default true)
+    :arg bool use-previous-build-as-reference: determines whether to always
+        use the previous build as the reference build (Default false)
     :arg bool use-stable-build-as-reference: The number of new warnings will be
       calculated based on the last stable build, allowing reverts of unstable
       builds where the number of warnings was decreased. (default false)
@@ -4487,6 +4593,8 @@ def dry(parser, xml_parent, data):
     :arg bool do-not-resolve-relative-paths: (default false)
     :arg bool dont-compute-new: If set to false, computes new warnings based on
       the reference build (default true)
+    :arg bool use-previous-build-as-reference: determines whether to always
+        use the previous build as the reference build (Default false)
     :arg bool use-stable-build-as-reference: The number of new warnings will be
       calculated based on the last stable build, allowing reverts of unstable
       builds where the number of warnings was decreased. (default false)
@@ -5193,6 +5301,9 @@ def google_cloud_storage(parser, xml_parent, data):
                       share uploaded artifacts with everyone (default false)
                     * **upload-for-failed-jobs** (`bool`) whether to upload
                       artifacts even if the build fails (default false)
+                    * **show-inline** (`bool`) whether to show uploaded build
+                      log inline in web browsers, rather than forcing it to be
+                      downloaded (default true)
                     * **strip-prefix** (`str`) strip this prefix off the
                       file names (default: not set)
 
@@ -5206,6 +5317,9 @@ def google_cloud_storage(parser, xml_parent, data):
                       share uploaded artifacts with everyone (default false)
                     * **upload-for-failed-jobs** (`bool`) whether to upload
                       artifacts even if the build fails (default false)
+                    * **show-inline** (`bool`) whether to show uploaded
+                      artifacts inline in web browsers, rather than forcing
+                      them to be downloaded (default false)
                     * **strip-prefix** (`str`) strip this prefix off the
                       file names (default: not set)
 
@@ -5268,6 +5382,9 @@ def google_cloud_storage(parser, xml_parent, data):
         XML.SubElement(xml_element, 'forFailedJobs').text = str(
             properties.get('upload-for-failed-jobs', False)).lower()
 
+        XML.SubElement(xml_element, 'showInline').text = str(
+            properties.get('show-inline', True)).lower()
+
         XML.SubElement(xml_element, 'pathPrefix').text = str(
             properties.get('strip-prefix', ''))
 
@@ -5300,6 +5417,9 @@ def google_cloud_storage(parser, xml_parent, data):
 
         XML.SubElement(xml_element, 'forFailedJobs').text = str(
             properties.get('upload-for-failed-jobs', False)).lower()
+
+        XML.SubElement(xml_element, 'showInline').text = str(
+            properties.get('show-inline', False)).lower()
 
         XML.SubElement(xml_element, 'pathPrefix').text = str(
             properties.get('strip-prefix', ''))

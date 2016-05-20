@@ -265,6 +265,7 @@ def timeout(parser, xml_parent, data):
         * **no-activity**
         * **elastic**
         * **absolute**
+        * **deadline**
 
     :arg int elastic-percentage: Percentage of the three most recent builds
         where to declare a timeout, only applies to **elastic** type.
@@ -273,6 +274,12 @@ def timeout(parser, xml_parent, data):
         average duration, only applies to **elastic** type. (default 3)
     :arg int elastic-default-timeout: Timeout to use if there were no previous
         builds, only applies to **elastic** type. (default 3)
+
+    :arg str deadline-time: Build terminate automatically at next deadline time
+        (HH:MM:SS), only applies to **deadline** type. (default 0:00:00)
+    :arg int deadline-tolerance: Period in minutes after deadline when a job
+        should be immediately aborted, only applies to **deadline** type.
+        (default 1)
 
     Example (Version < 1.14):
 
@@ -296,6 +303,9 @@ def timeout(parser, xml_parent, data):
     .. literalinclude::
         /../../tests/wrappers/fixtures/timeout/version-1.14/elastic001.yaml
 
+    .. literalinclude::
+        /../../tests/wrappers/fixtures/timeout/version-1.15/deadline001.yaml
+
     """
     prefix = 'hudson.plugins.build__timeout.'
     twrapper = XML.SubElement(xml_parent, prefix + 'BuildTimeoutWrapper')
@@ -304,7 +314,8 @@ def timeout(parser, xml_parent, data):
         "Jenkins build timeout plugin")
     version = pkg_resources.parse_version(plugin_info.get("version", "0"))
 
-    valid_strategies = ['absolute', 'no-activity', 'likely-stuck', 'elastic']
+    valid_strategies = ['absolute', 'no-activity', 'likely-stuck', 'elastic',
+                        'deadline']
 
     if version >= pkg_resources.parse_version("1.14"):
         strategy = data.get('type', 'absolute')
@@ -344,6 +355,18 @@ def timeout(parser, xml_parent, data):
                            ).text = str(data.get('elastic-number-builds', 0))
             XML.SubElement(strategy_element, 'timeoutMinutesElasticDefault'
                            ).text = str(data.get('elastic-default-timeout', 3))
+
+        elif strategy == "deadline":
+            strategy_element = XML.SubElement(
+                twrapper, 'strategy',
+                {'class': "hudson.plugins.build_timeout."
+                          "impl.DeadlineTimeOutStrategy"})
+            deadline_time = str(data.get('deadline-time', '0:00:00'))
+            XML.SubElement(strategy_element,
+                           'deadlineTime').text = str(deadline_time)
+            deadline_tolerance = int(data.get('deadline-tolerance', 1))
+            XML.SubElement(strategy_element, 'deadlineToleranceInMinutes'
+                           ).text = str(deadline_tolerance)
 
         actions = []
 
@@ -571,18 +594,21 @@ def workspace_cleanup(parser, xml_parent, data):
     :arg list include: list of files to be included
     :arg list exclude: list of files to be excluded
     :arg bool dirmatch: Apply pattern to directories too (default: false)
+    :arg str check-parameter: boolean environment variable to check to
+        determine whether to actually clean up
+    :arg str external-deletion-command: external deletion command to run
+        against files and directories
 
-    Example::
+    Example:
 
-      wrappers:
-        - workspace-cleanup:
-            include:
-              - "*.zip"
+    .. literalinclude::
+        /../../tests/wrappers/fixtures/workspace-cleanup001.yaml
+       :language: yaml
     """
 
     p = XML.SubElement(xml_parent,
                        'hudson.plugins.ws__cleanup.PreBuildCleanup')
-    p.set("plugin", "ws-cleanup@0.14")
+    p.set("plugin", "ws-cleanup")
     if "include" in data or "exclude" in data:
         patterns = XML.SubElement(p, 'patterns')
 
@@ -598,6 +624,12 @@ def workspace_cleanup(parser, xml_parent, data):
 
     deldirs = XML.SubElement(p, 'deleteDirs')
     deldirs.text = str(data.get("dirmatch", False)).lower()
+
+    XML.SubElement(p, 'cleanupParameter').text = str(
+        data.get('check-parameter', ''))
+
+    XML.SubElement(p, 'externalDelete').text = str(
+        data.get('external-deletion-command', ''))
 
 
 def m2_repository_cleanup(parser, xml_parent, data):
@@ -1074,6 +1106,67 @@ def jclouds(parser, xml_parent, data):
         XML.SubElement(xml_parent,
                        'jenkins.plugins.jclouds.compute.'
                        'JCloudsOneOffSlave')
+
+
+def openstack(parser, xml_parent, data):
+    """yaml: openstack
+    Provision slaves from OpenStack on demand.  Requires the Jenkins
+    :jenkins-wiki:`Openstack Cloud Plugin <Openstack+Cloud+Plugin>`.
+
+    :arg list instances: List of instances to be launched at the beginning of
+        the build.
+
+        :instances:
+            * **cloud-name** (`str`) -- The name of the cloud profile which
+              contains the specified cloud instance template (required).
+            * **template-name** (`str`) -- The name of the cloud instance
+              template to create an instance from(required).
+            * **manual-template** (`bool`) -- If True, instance template name
+              will be put in 'Specify Template Name as String' option. Not
+              specifying or specifying False, instance template name will be
+              put in 'Select Template from List' option. To use parameter
+              replacement, set this to True.  (default: False)
+            * **count** (`int`) -- How many instances to create (default: 1).
+
+    :arg bool single-use: Whether or not to terminate the slave after use
+        (default: False).
+
+    Example:
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/openstack001.yaml
+    """
+    tag_prefix = 'jenkins.plugins.openstack.compute.'
+
+    if 'instances' in data:
+        clouds_build_wrapper = XML.SubElement(
+            xml_parent, tag_prefix + 'JCloudsBuildWrapper')
+        instances_wrapper = XML.SubElement(
+            clouds_build_wrapper, 'instancesToRun')
+
+        for instance in data['instances']:
+            instances_to_run = XML.SubElement(
+                instances_wrapper, tag_prefix + 'InstancesToRun')
+
+            try:
+                cloud_name = instance['cloud-name']
+                template_name = instance['template-name']
+            except KeyError as exception:
+                raise MissingAttributeError(exception.args[0])
+
+            XML.SubElement(instances_to_run, 'cloudName').text = cloud_name
+
+            if instance.get('manual-template', False):
+                XML.SubElement(instances_to_run,
+                               'manualTemplateName').text = template_name
+            else:
+                XML.SubElement(instances_to_run,
+                               'templateName').text = template_name
+
+            XML.SubElement(instances_to_run, 'count').text = str(
+                instance.get('count', 1))
+
+    if data.get('single-use', False):
+        XML.SubElement(xml_parent, tag_prefix + 'JCloudsOneOffSlave')
 
 
 def build_user_vars(parser, xml_parent, data):
@@ -1941,8 +2034,13 @@ def artifactory_generic(parser, xml_parent, data):
     :arg str name: Artifactory user with permissions use for
         connected to the selected Artifactory Server
         (default '')
-    :arg str repo-key: Release repository name (default '')
-    :arg str snapshot-repo-key: Snapshots repository name (default '')
+    :arg str repo-key: Release repository name (plugin < 2.3.0) (default '')
+    :arg str snapshot-repo-key: Snapshots repository name (plugin < 2.3.0)
+        (default '')
+    :arg str key-from-select: Repository key to use (plugin >= 2.3.0)
+        (default '')
+    :arg str key-from-text: Repository key to use that can be configured
+        dynamically using Jenkins variables (plugin >= 2.3.0) (default '')
     :arg list deploy-pattern: List of patterns for mappings
         build artifacts to published artifacts. Supports Ant-style wildcards
         mapping to target directories. E.g.: */*.zip=>dir (default [])
@@ -1984,9 +2082,23 @@ def artifactory_generic(parser, xml_parent, data):
     details = XML.SubElement(artifactory, 'details')
     artifactory_common_details(details, data)
 
-    XML.SubElement(details, 'repositoryKey').text = data.get('repo-key', '')
-    XML.SubElement(details, 'snapshotsRepositoryKey').text = data.get(
-        'snapshot-repo-key', '')
+    # Get plugin information to maintain backwards compatibility
+    info = parser.registry.get_plugin_info('artifactory')
+    version = pkg_resources.parse_version(info.get('version', '0'))
+
+    if version >= pkg_resources.parse_version('2.3.0'):
+        deployReleaseRepo = XML.SubElement(details, 'deployReleaseRepository')
+        XML.SubElement(deployReleaseRepo, 'keyFromText').text = data.get(
+            'key-from-text', '')
+        XML.SubElement(deployReleaseRepo, 'keyFromSelect').text = data.get(
+            'key-from-select', '')
+        XML.SubElement(deployReleaseRepo, 'dynamicMode').text = str(
+            'key-from-text' in data.keys()).lower()
+    else:
+        XML.SubElement(details, 'repositoryKey').text = data.get(
+            'repo-key', '')
+        XML.SubElement(details, 'snapshotsRepositoryKey').text = data.get(
+            'snapshot-repo-key', '')
 
     XML.SubElement(artifactory, 'deployPattern').text = ','.join(data.get(
         'deploy-pattern', []))
