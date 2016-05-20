@@ -60,6 +60,8 @@ def build_trends_publisher(plugin_name, xml_element, data):
         ('default-encoding', 'defaultEncoding', ''),
         ('can-run-on-failed', 'canRunOnFailed', False),
         ('use-stable-build-as-reference', 'useStableBuildAsReference', False),
+        ('use-previous-build-as-reference',
+         'usePreviousBuildAsReference', False),
         ('use-delta-values', 'useDeltaValues', False),
         ('thresholds', 'thresholds', {}),
         ('should-detect-modules', 'shouldDetectModules', False),
@@ -108,6 +110,7 @@ def config_file_provider_builder(xml_parent, data):
 
 
 def config_file_provider_settings(xml_parent, data):
+    SETTINGS_TYPES = ['file', 'cfp']
     settings = {
         'default-settings':
         'jenkins.mvn.DefaultSettingsProvider',
@@ -127,17 +130,27 @@ def config_file_provider_settings(xml_parent, data):
     if 'settings' in data:
         # Support for Config File Provider
         settings_file = str(data['settings'])
-        if settings_file.startswith(
-            'org.jenkinsci.plugins.configfiles.maven.MavenSettingsConfig'):
+        settings_type = data.get('settings-type', 'file')
+
+        # For cfp versions <2.10.0 we are able to detect cfp via the config
+        # settings name.
+        text = 'org.jenkinsci.plugins.configfiles.maven.MavenSettingsConfig'
+        if settings_file.startswith(text):
+            settings_type = 'cfp'
+
+        if settings_type == 'file':
+            lsettings = XML.SubElement(
+                xml_parent, 'settings',
+                {'class': settings['settings']})
+            XML.SubElement(lsettings, 'path').text = settings_file
+        elif settings_type == 'cfp':
             lsettings = XML.SubElement(
                 xml_parent, 'settings',
                 {'class': settings['config-file-provider-settings']})
             XML.SubElement(lsettings, 'settingsConfigId').text = settings_file
         else:
-            lsettings = XML.SubElement(
-                xml_parent, 'settings',
-                {'class': settings['settings']})
-            XML.SubElement(lsettings, 'path').text = settings_file
+            raise InvalidAttributeError(
+                'settings-type', settings_type, SETTINGS_TYPES)
     else:
         XML.SubElement(xml_parent, 'settings',
                        {'class': settings['default-settings']})
@@ -145,9 +158,20 @@ def config_file_provider_settings(xml_parent, data):
     if 'global-settings' in data:
         # Support for Config File Provider
         global_settings_file = str(data['global-settings'])
-        if global_settings_file.startswith(
-                'org.jenkinsci.plugins.configfiles.maven.'
-                'GlobalMavenSettingsConfig'):
+        global_settings_type = data.get('settings-type', 'file')
+
+        # For cfp versions <2.10.0 we are able to detect cfp via the config
+        # settings name.
+        text = ('org.jenkinsci.plugins.configfiles.maven.'
+                'GlobalMavenSettingsConfig')
+        if global_settings_file.startswith(text):
+            global_settings_type = 'cfp'
+
+        if global_settings_type == 'file':
+            gsettings = XML.SubElement(xml_parent, 'globalSettings',
+                                       {'class': settings['global-settings']})
+            XML.SubElement(gsettings, 'path').text = global_settings_file
+        elif global_settings_type == 'cfp':
             gsettings = XML.SubElement(
                 xml_parent, 'globalSettings',
                 {'class': settings['config-file-provider-global-settings']})
@@ -155,9 +179,8 @@ def config_file_provider_settings(xml_parent, data):
                 gsettings,
                 'settingsConfigId').text = global_settings_file
         else:
-            gsettings = XML.SubElement(xml_parent, 'globalSettings',
-                                       {'class': settings['global-settings']})
-            XML.SubElement(gsettings, 'path').text = global_settings_file
+            raise InvalidAttributeError(
+                'settings-type', global_settings_type, SETTINGS_TYPES)
     else:
         XML.SubElement(xml_parent, 'globalSettings',
                        {'class': settings['default-global-settings']})
@@ -220,10 +243,6 @@ def findbugs_settings(xml_parent, data):
     XML.SubElement(xml_parent, 'includePattern').text = include_files
     exclude_files = data.get('exclude-files', '')
     XML.SubElement(xml_parent, 'excludePattern').text = exclude_files
-    use_previous_build = str(data.get('use-previous-build-as-reference',
-                                      False)).lower()
-    XML.SubElement(xml_parent,
-                   'usePreviousBuildAsReference').text = use_previous_build
 
 
 def get_value_from_yaml_or_config_file(key, section, data, parser):
@@ -404,16 +423,50 @@ def artifactory_repository(xml_parent, data, target):
             data.get('deploy-dynamic-mode', False)).lower()
 
 
-def convert_mapping_to_xml(parent, data, mapping):
+def append_git_revision_config(parent, config_def):
+    params = XML.SubElement(
+        parent, 'hudson.plugins.git.GitRevisionBuildParameters')
 
+    try:
+        # If git-revision is a boolean, the get() will
+        # throw an AttributeError
+        combine_commits = str(
+            config_def.get('combine-queued-commits', False)).lower()
+    except AttributeError:
+        combine_commits = 'false'
+
+    XML.SubElement(params, 'combineQueuedCommits').text = combine_commits
+
+
+def convert_mapping_to_xml(parent, data, mapping, fail_required=False):
+    """Convert mapping to XML
+
+    fail_required affects the last parameter of the mapping field when it's
+    parameter is set to 'None'. When fail_required is True then a 'None' value
+    represents a required configuration so will raise a MissingAttributeError
+    if the user does not provide the configuration.
+
+    If fail_required is False parameter is treated as optional. Logic will skip
+    configuring the XML tag for the parameter. We recommend for new plugins to
+    set fail_required=True and instead of optional parameters provide a default
+    value for all paramters that are not required instead.
+    """
     for elem in mapping:
         (optname, xmlname, val) = elem
         val = data.get(optname, val)
+
+        # Use fail_required setting to allow support for optional parameters
+        # we will phase this out in the future as we rework plugins so that
+        # optional parameters use a default setting instead.
+        if val is None and fail_required is True:
+            raise MissingAttributeError(optname)
+
+        # (Deprecated) in the future we will default to fail_required True
         # if no value is provided then continue else leave it
         # up to the user if they want to use an empty XML tag
-        if val is None:
+        if val is None and fail_required is False:
             continue
-        if str(val).lower() == 'true' or str(val).lower() == 'false':
+
+        if type(val) == bool:
             val = str(val).lower()
-        xe = XML.SubElement(parent, xmlname)
-        xe.text = str(val)
+        XML.SubElement(parent, xmlname).text = str(val)

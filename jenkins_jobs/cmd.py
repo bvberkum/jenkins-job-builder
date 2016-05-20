@@ -50,6 +50,9 @@ query_plugins_info=True
 [hipchat]
 authtoken=dummy
 send-as=Jenkins
+
+[__future__]
+param_order_from_yaml=False
 """
 
 
@@ -154,6 +157,15 @@ def create_parser():
         dest='allow_empty_variables', default=None,
         help='Don\'t fail if any of the variables inside any string are not '
         'defined, replace with empty string instead')
+    parser.add_argument(
+        '--user', '-u',
+        help='The Jenkins user to use for authentication. This overrides '
+        'the user specified in the configuration file')
+    parser.add_argument(
+        '--password', '-p',
+        help='Password or API token to use for authenticating towards '
+        'Jenkins. This overrides the password specified in the '
+        'configuration file.')
 
     return parser
 
@@ -179,17 +191,28 @@ def main(argv=None):
     execute(options, config)
 
 
-def setup_config_settings(options):
-
+def get_config_file(options):
+    # Initialize with the global fallback location for the config.
     conf = '/etc/jenkins_jobs/jenkins_jobs.ini'
     if options.conf:
         conf = options.conf
     else:
-        # Fallback to script directory
+        # Allow a script directory config to override.
         localconf = os.path.join(os.path.dirname(__file__),
                                  'jenkins_jobs.ini')
         if os.path.isfile(localconf):
             conf = localconf
+        # Allow a user directory config to override.
+        userconf = os.path.join(os.path.expanduser('~'), '.config',
+                                'jenkins_jobs', 'jenkins_jobs.ini')
+        if os.path.isfile(userconf):
+            conf = userconf
+    return conf
+
+
+def setup_config_settings(options):
+
+    conf = get_config_file(options)
     config = configparser.ConfigParser()
     # Load default config always
     config.readfp(StringIO(DEFAULT_CONF))
@@ -232,15 +255,21 @@ def execute(options, config):
     #
     # catching 'TypeError' is a workaround for python 2.6 interpolation error
     # https://bugs.launchpad.net/openstack-ci/+bug/1259631
-    try:
-        user = config.get('jenkins', 'user')
-    except (TypeError, configparser.NoOptionError):
-        user = None
+    if options.user:
+        user = options.user
+    else:
+        try:
+            user = config.get('jenkins', 'user')
+        except (TypeError, configparser.NoOptionError):
+            user = None
 
-    try:
-        password = config.get('jenkins', 'password')
-    except (TypeError, configparser.NoOptionError):
-        password = None
+    if options.password:
+        password = options.password
+    else:
+        try:
+            password = config.get('jenkins', 'password')
+        except (TypeError, configparser.NoOptionError):
+            password = None
 
     # Inform the user as to what is likely to happen, as they may specify
     # a real jenkins instance in test mode to get the plugin info to check

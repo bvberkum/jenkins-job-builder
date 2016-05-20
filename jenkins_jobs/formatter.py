@@ -39,17 +39,17 @@ def deep_format(obj, paramdict, allow_empty=False):
                 ret = paramdict[result.group("key")]
             else:
                 ret = CustomFormatter(allow_empty).format(obj, **paramdict)
-        except KeyError as exc:
+        except (KeyError, ValueError) as exc:
             missing_key = exc.message
             desc = "%s parameter missing to format %s\nGiven:\n%s" % (
                 missing_key, obj, pformat(paramdict))
             raise JenkinsJobsException(desc)
     elif isinstance(obj, list):
-        ret = []
+        ret = type(obj)()
         for item in obj:
             ret.append(deep_format(item, paramdict, allow_empty))
     elif isinstance(obj, dict):
-        ret = {}
+        ret = type(obj)()
         for item in obj:
             try:
                 ret[CustomFormatter(allow_empty).format(item, **paramdict)] = \

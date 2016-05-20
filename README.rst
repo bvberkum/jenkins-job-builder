@@ -3,18 +3,19 @@ README
 
 .. note::
 
-   Fork
+   Brix Customizations: this contains some things not in openstack.
+   To install or update: run ``make install`` cq.``make reinstall``
 
 
-Jenkins Job Builder takes simple descriptions of Jenkins_ jobs in YAML_ or JSON_
-format and uses them to configure Jenkins. You can keep your job descriptions in
-human readable text format in a version control system to make changes and
-auditing easier. It also has a flexible template system, so creating many
-similarly configured jobs is easy.
+Jenkins Job Builder takes simple descriptions of Jenkins_ jobs in YAML_ format,
+and uses them to configure Jenkins. You can keep your job descriptions in human
+readable text format in a version control system to make changes and auditing
+easier. It also has a flexible template system, so creating many similarly
+configured jobs is easy.
 
 To install::
 
-    $ sudo python setup.py install
+    $ pip install --user jenkins-job-builder
 
 Online documentation:
 
@@ -33,6 +34,13 @@ Repository:
 Cloning::
 
     git clone https://git.openstack.org/openstack-infra/jenkins-job-builder
+
+A virtual environment is recommended for development.  For example, Jenkins
+Job Builder may be installed from the top level directory::
+
+    $ virtualenv .venv
+    $ source .venv/bin/activate
+    $ pip install -r test-requirements.txt -e .
 
 Patches are submitted via Gerrit at:
 
@@ -80,7 +88,7 @@ Then install the required python packages using pip_::
 
     $ sudo pip install PyYAML python-jenkins
 
-.. _Jenkins: http://jenkins-ci.org/
+.. _Jenkins: https://jenkins.io/
 .. _YAML: http://www.yaml.org/
 .. _JSON: http://json.org/
 .. _pep8: https://pypi.python.org/pypi/pep8
