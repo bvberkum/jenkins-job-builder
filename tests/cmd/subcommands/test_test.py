@@ -6,10 +6,10 @@ import jenkins
 
 from jenkins_jobs import cmd
 from jenkins_jobs.errors import JenkinsJobsException
+from mock import patch
 from tests.base import mock
 from tests.cmd.test_cmd import CmdTestsBase
 from tests.cmd.test_recurse_path import fake_os_walk
-
 
 os_walk_return_values = {
     '/jjb_projects': [
@@ -44,6 +44,30 @@ def os_walk_side_effects(path_name, topdown):
 
 
 @mock.patch('jenkins_jobs.builder.Jenkins.get_plugins_info', mock.MagicMock)
+class TestConfigs(CmdTestsBase):
+
+    def test_use_global_config(self):
+        """
+        Verify that JJB uses the global config file by default
+        """
+        args = self.parser.parse_args(['test', 'foo'])
+        self.assertEqual(cmd.get_config_file(args),
+                         '/etc/jenkins_jobs/jenkins_jobs.ini')
+
+    def test_use_config_in_user_home(self):
+        """
+        Verify that JJB uses config file in user home folder
+        """
+        args = self.parser.parse_args(['test', 'foo'])
+        # args.output_dir = mock.MagicMock()
+        # mock_isfile.side_effect = True
+        expected_loc = os.path.join(os.path.expanduser('~'), '.config',
+                                    'jenkins_jobs', 'jenkins_jobs.ini')
+        with patch('os.path.isfile', return_value=True):
+            self.assertEqual(cmd.get_config_file(args), expected_loc)
+
+
+@mock.patch('jenkins_jobs.builder.Jenkins.get_plugins_info', mock.MagicMock)
 class TestTests(CmdTestsBase):
 
     def test_non_existing_config_dir(self):
@@ -71,7 +95,7 @@ class TestTests(CmdTestsBase):
                                        os.path.join(self.fixtures_path,
                                                     'cmd-001.yaml'),
                                        'invalid'])
-        args.output_dir = mock.MagicMock()
+        args.output_dir = mock.MagicMock(wraps=io.BytesIO())
         cmd.execute(args, self.config)   # probably better to fail here
 
     def test_valid_job(self):

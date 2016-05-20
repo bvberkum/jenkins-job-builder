@@ -60,6 +60,8 @@ def build_trends_publisher(plugin_name, xml_element, data):
         ('default-encoding', 'defaultEncoding', ''),
         ('can-run-on-failed', 'canRunOnFailed', False),
         ('use-stable-build-as-reference', 'useStableBuildAsReference', False),
+        ('use-previous-build-as-reference',
+         'usePreviousBuildAsReference', False),
         ('use-delta-values', 'useDeltaValues', False),
         ('thresholds', 'thresholds', {}),
         ('should-detect-modules', 'shouldDetectModules', False),
@@ -108,6 +110,7 @@ def config_file_provider_builder(xml_parent, data):
 
 
 def config_file_provider_settings(xml_parent, data):
+    SETTINGS_TYPES = ['file', 'cfp']
     settings = {
         'default-settings':
         'jenkins.mvn.DefaultSettingsProvider',
@@ -127,17 +130,27 @@ def config_file_provider_settings(xml_parent, data):
     if 'settings' in data:
         # Support for Config File Provider
         settings_file = str(data['settings'])
-        if settings_file.startswith(
-            'org.jenkinsci.plugins.configfiles.maven.MavenSettingsConfig'):
+        settings_type = data.get('settings-type', 'file')
+
+        # For cfp versions <2.10.0 we are able to detect cfp via the config
+        # settings name.
+        text = 'org.jenkinsci.plugins.configfiles.maven.MavenSettingsConfig'
+        if settings_file.startswith(text):
+            settings_type = 'cfp'
+
+        if settings_type == 'file':
+            lsettings = XML.SubElement(
+                xml_parent, 'settings',
+                {'class': settings['settings']})
+            XML.SubElement(lsettings, 'path').text = settings_file
+        elif settings_type == 'cfp':
             lsettings = XML.SubElement(
                 xml_parent, 'settings',
                 {'class': settings['config-file-provider-settings']})
             XML.SubElement(lsettings, 'settingsConfigId').text = settings_file
         else:
-            lsettings = XML.SubElement(
-                xml_parent, 'settings',
-                {'class': settings['settings']})
-            XML.SubElement(lsettings, 'path').text = settings_file
+            raise InvalidAttributeError(
+                'settings-type', settings_type, SETTINGS_TYPES)
     else:
         XML.SubElement(xml_parent, 'settings',
                        {'class': settings['default-settings']})
@@ -145,9 +158,20 @@ def config_file_provider_settings(xml_parent, data):
     if 'global-settings' in data:
         # Support for Config File Provider
         global_settings_file = str(data['global-settings'])
-        if global_settings_file.startswith(
-                'org.jenkinsci.plugins.configfiles.maven.'
-                'GlobalMavenSettingsConfig'):
+        global_settings_type = data.get('settings-type', 'file')
+
+        # For cfp versions <2.10.0 we are able to detect cfp via the config
+        # settings name.
+        text = ('org.jenkinsci.plugins.configfiles.maven.'
+                'GlobalMavenSettingsConfig')
+        if global_settings_file.startswith(text):
+            global_settings_type = 'cfp'
+
+        if global_settings_type == 'file':
+            gsettings = XML.SubElement(xml_parent, 'globalSettings',
+                                       {'class': settings['global-settings']})
+            XML.SubElement(gsettings, 'path').text = global_settings_file
+        elif global_settings_type == 'cfp':
             gsettings = XML.SubElement(
                 xml_parent, 'globalSettings',
                 {'class': settings['config-file-provider-global-settings']})
@@ -155,9 +179,8 @@ def config_file_provider_settings(xml_parent, data):
                 gsettings,
                 'settingsConfigId').text = global_settings_file
         else:
-            gsettings = XML.SubElement(xml_parent, 'globalSettings',
-                                       {'class': settings['global-settings']})
-            XML.SubElement(gsettings, 'path').text = global_settings_file
+            raise InvalidAttributeError(
+                'settings-type', global_settings_type, SETTINGS_TYPES)
     else:
         XML.SubElement(xml_parent, 'globalSettings',
                        {'class': settings['default-global-settings']})
@@ -220,10 +243,6 @@ def findbugs_settings(xml_parent, data):
     XML.SubElement(xml_parent, 'includePattern').text = include_files
     exclude_files = data.get('exclude-files', '')
     XML.SubElement(xml_parent, 'excludePattern').text = exclude_files
-    use_previous_build = str(data.get('use-previous-build-as-reference',
-                                      False)).lower()
-    XML.SubElement(xml_parent,
-                   'usePreviousBuildAsReference').text = use_previous_build
 
 
 def get_value_from_yaml_or_config_file(key, section, data, parser):
@@ -402,6 +421,21 @@ def artifactory_repository(xml_parent, data, target):
             'deploy-snapshot-repo-key', '')
         XML.SubElement(xml_parent, 'dynamicMode').text = str(
             data.get('deploy-dynamic-mode', False)).lower()
+
+
+def append_git_revision_config(parent, config_def):
+    params = XML.SubElement(
+        parent, 'hudson.plugins.git.GitRevisionBuildParameters')
+
+    try:
+        # If git-revision is a boolean, the get() will
+        # throw an AttributeError
+        combine_commits = str(
+            config_def.get('combine-queued-commits', False)).lower()
+    except AttributeError:
+        combine_commits = 'false'
+
+    XML.SubElement(params, 'combineQueuedCommits').text = combine_commits
 
 
 def convert_mapping_to_xml(parent, data, mapping, fail_required=False):

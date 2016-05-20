@@ -29,7 +29,6 @@ Example::
       - timed: '@daily'
 """
 
-from collections import OrderedDict
 import logging
 import re
 import xml.etree.ElementTree as XML
@@ -88,7 +87,9 @@ def gerrit_handle_legacy_configuration(data):
             'branchPattern',
         ])
 
-    old_format_events = OrderedDict(
+    mapping_obj_type = type(data)
+
+    old_format_events = mapping_obj_type(
         (key, should_register) for key, should_register in six.iteritems(data)
         if key.startswith('trigger-on-'))
     trigger_on = data.setdefault('trigger-on', [])
@@ -109,11 +110,18 @@ def gerrit_handle_legacy_configuration(data):
 
     for idx, event in enumerate(trigger_on):
         if event == 'comment-added-event':
-            trigger_on[idx] = events = OrderedDict()
-            events['comment-added-event'] = OrderedDict((
-                ('approval-category', data['trigger-approval-category']),
-                ('approval-value', data['trigger-approval-value'])
-            ))
+            trigger_on[idx] = events = mapping_obj_type()
+            try:
+                events['comment-added-event'] = mapping_obj_type((
+                    ('approval-category', data['trigger-approval-category']),
+                    ('approval-value', data['trigger-approval-value'])
+                ))
+            except KeyError:
+                raise JenkinsJobsException(
+                    'The comment-added-event trigger requires which approval '
+                    'category and value you want to trigger the job. '
+                    'It should be specified by the approval-category '
+                    'and approval-value properties.')
 
 
 def build_gerrit_triggers(xml_parent, data):
@@ -362,10 +370,19 @@ def gerrit(parser, xml_parent, data):
                 * **topics** (`list`) -- List of topics to match
                   (optional)
 
-                  :File Path: * **compare-type** (`str`) -- ''PLAIN'', ''ANT''
-                                or ''REG_EXP'' (optional) (default ''PLAIN'')
-                              * **pattern** (`str`) -- Topic name pattern to
-                                match
+                  :Topic: * **compare-type** (`str`) -- ''PLAIN'', ''ANT'' or
+                            ''REG_EXP'' (optional) (default ''PLAIN'')
+                          * **pattern** (`str`) -- Topic name pattern to
+                            match
+
+                * **disable-strict-forbidden-file-verification** (`bool`) --
+                      Enabling this option will allow an event to trigger a
+                      build if the event contains BOTH one or more wanted file
+                      paths AND one or more forbidden file paths.  In other
+                      words, with this option, the build will not get
+                      triggered if the change contains only forbidden files,
+                      otherwise it will get triggered. Requires plugin
+                      version >= 2.16.0 (default false)
 
     :arg dict skip-vote: map of build outcomes for which Jenkins must skip
         vote. Requires Gerrit Trigger Plugin version >= 2.7.0
@@ -523,6 +540,11 @@ def gerrit(parser, xml_parent, data):
                     get_compare_type('compare-type', topic.get('compare-type',
                                                                'PLAIN'))
                 XML.SubElement(topic_tag, 'pattern').text = topic['pattern']
+
+        XML.SubElement(gproj,
+                       'disableStrictForbiddenFileVerification').text = str(
+            project.get('disable-strict-forbidden-file-verification',
+                        False)).lower()
 
     build_gerrit_skip_votes(gtrig, data)
     XML.SubElement(gtrig, 'silentMode').text = str(
@@ -1222,7 +1244,7 @@ def monitor_folders(parser, xml_parent, data):
     """yaml: monitor-folders
     Configure Jenkins to monitor folders.
     Requires the Jenkins :jenkins-wiki:`Filesystem Trigger Plugin
-    <FSTriggerPlugin>`.
+    <FSTrigger+Plugin>`.
 
     :arg str path: Folder path to poll. (optional)
     :arg list includes: Fileset includes setting that specifies the list of
@@ -1265,7 +1287,7 @@ def monitor_files(parser, xml_parent, data):
     """yaml: monitor-files
     Configure Jenkins to monitor files.
     Requires the Jenkins :jenkins-wiki:`Filesystem Trigger Plugin
-    <FSTriggerPlugin>`.
+    <FSTrigger+Plugin>`.
 
     :arg list files: List of files to monitor
 
@@ -1535,6 +1557,34 @@ def groovy_script(parser, xml_parent, data):
     if label:
         XML.SubElement(gst, 'triggerLabel').text = label
     XML.SubElement(gst, 'spec').text = str(data.get('cron', ''))
+
+
+def rabbitmq(parser, xml_parent, data):
+    """yaml: rabbitmq
+    This plugin triggers build using remote build message in RabbitMQ queue.
+    Requires the Jenkins :jenkins-wiki:`RabbitMQ Build Trigger Plugin
+    <RabbitMQ+Build+Trigger+Plugin>`.
+
+    :arg str token: the build token expected in the message queue (required)
+
+    Example:
+
+    .. literalinclude:: /../../tests/triggers/fixtures/rabbitmq.yaml
+       :language: yaml
+    """
+
+    rabbitmq = XML.SubElement(
+        xml_parent,
+        'org.jenkinsci.plugins.rabbitmqbuildtrigger.'
+        'RemoteBuildTrigger')
+
+    XML.SubElement(rabbitmq, 'spec').text = ''
+
+    try:
+        XML.SubElement(rabbitmq, 'remoteBuildToken').text = str(
+            data.get('token'))
+    except KeyError as e:
+        raise MissingAttributeError(e.arg[0])
 
 
 class Triggers(jenkins_jobs.modules.base.Base):
