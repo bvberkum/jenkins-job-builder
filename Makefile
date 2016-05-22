@@ -16,5 +16,7 @@ install::
 
 uninstall::
 	sudo pip uninstall -y jenkins-job-builder
+	pip uninstall -y jenkins-job-builder || printf ""
+	pip uninstall -y jenkins-job-builder || printf ""
 
 reinstall:: uninstall install
