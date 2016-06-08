@@ -39,7 +39,7 @@ def deep_format(obj, paramdict, allow_empty=False):
                 ret = paramdict[result.group("key")]
             else:
                 ret = CustomFormatter(allow_empty).format(obj, **paramdict)
-        except (KeyError, ValueError) as exc:
+        except KeyError as exc:
             missing_key = exc.message
             desc = "%s parameter missing to format %s\nGiven:\n%s" % (
                 missing_key, obj, pformat(paramdict))

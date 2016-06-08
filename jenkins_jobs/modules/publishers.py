@@ -6219,15 +6219,3 @@ def task_scanner(parser, xml_parent, data):
         XML.SubElement(xmlthresholds, key).text = value
 
 
-#      <thresholds plugin="analysis-core@1.65">
-#        <unstableTotalAll></unstableTotalAll>
-#        <unstableTotalHigh></unstableTotalHigh>
-#        <unstableTotalNormal></unstableTotalNormal>
-#        <unstableTotalLow></unstableTotalLow>
-#        <failedTotalAll></failedTotalAll>
-#        <failedTotalHigh></failedTotalHigh>
-#        <failedTotalNormal></failedTotalNormal>
-#        <failedTotalLow></failedTotalLow>
-#      </thresholds>
-
-
