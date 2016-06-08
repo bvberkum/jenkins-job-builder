@@ -1,10 +1,21 @@
-README
-======
+dotmpe/jjb
+==========
 
-Fork: dotmpe/master
+.. note::
+
+   Fork from openstack-infra/jenkins-job-builder
+
+master
   - Contains taskscanner, buildaliassetter plugin additions.
     But not tested yet.
 
+dotmpe
+  - Work in progress on DSL pipeline, workflow project.
+
+
+----
+
+OpenStack ReadMe
 
 Jenkins Job Builder takes simple descriptions of Jenkins_ jobs in YAML_ or JSON_
 format and uses them to configure Jenkins. You can keep your job descriptions in

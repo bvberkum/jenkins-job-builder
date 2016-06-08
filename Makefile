@@ -4,7 +4,6 @@ T := \
 .PHONY: $(T)
 
 SHELL := /bin/bash
-
 EMPTY :=
 SPACE := $(EMPTY) $(EMPTY)
 
@@ -18,3 +17,4 @@ uninstall::
 	sudo pip uninstall -y jenkins-job-builder
 
 reinstall:: uninstall install
+
