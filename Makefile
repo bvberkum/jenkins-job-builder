@@ -4,7 +4,6 @@ T := \
 .PHONY: $(T)
 
 SHELL := /bin/bash
-
 EMPTY :=
 SPACE := $(EMPTY) $(EMPTY)
 

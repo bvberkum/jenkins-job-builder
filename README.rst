@@ -1,7 +1,9 @@
 dotmpe/jjb
 ==========
 
-Fork from openstack-infra/jenkins-job-builder
+.. note::
+
+   Fork from openstack-infra/jenkins-job-builder
 
 master
   - Contains taskscanner, buildaliassetter plugin additions.
