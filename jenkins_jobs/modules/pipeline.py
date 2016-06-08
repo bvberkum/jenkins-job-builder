@@ -14,9 +14,8 @@
 
 
 """
-The Pipeline (formerly Workflow) module for continious delivery,
-requires the workflow-* plugins, see the workflow project type.
-
+The `dsl` module supports the attributes for The Pipeline (formerly Workflow)
+projects, either using verbatim pipeline DSL script, or by (multi-)SCM.
 
 **Component**: dsl
   :Macro: dsl
@@ -87,9 +86,9 @@ class DSL(jenkins_jobs.modules.base.Base):
 
         dsl = data['dsl']
 
-
         if 'script' in dsl:
             class_ = 'org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition'
+
         elif 'scm' in dsl:
             class_ = 'org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition'
         else:
@@ -106,6 +105,10 @@ class DSL(jenkins_jobs.modules.base.Base):
             XML.SubElement(xml_definition, 'script').text = dsl['script']
 
         elif 'scm' in dsl:
+
+            script_file = dsl.get('script-name', 'Jenkinsfile')
+            XML.SubElement(xml_definition, 'scriptPath').text = str(script_file)
+
             scms_parent = XML.Element('scms')
             for scm in dsl.get('scm', []):
                 self.registry.dispatch('scm', parser, scms_parent, scm)
