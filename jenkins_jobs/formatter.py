@@ -19,6 +19,7 @@ import logging
 from pprint import pformat
 import re
 from string import Formatter
+from collections import OrderedDict
 
 from jenkins_jobs.errors import JenkinsJobsException
 
