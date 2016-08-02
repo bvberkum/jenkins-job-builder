@@ -40,6 +40,7 @@ from jenkins_jobs.errors import JenkinsJobsException
 from jenkins_jobs.errors import MissingAttributeError
 import jenkins_jobs.modules.base
 from jenkins_jobs.modules import hudson_model
+from jenkins_jobs.modules.helpers import convert_mapping_to_xml
 
 logger = logging.getLogger(str(__name__))
 
@@ -224,11 +225,11 @@ def gerrit(parser, xml_parent, data):
            creation.
 
            :Patchset created:
-               * **exclude-drafts** (`bool`) -- exclude drafts (Default: False)
+               * **exclude-drafts** (`bool`) -- exclude drafts (default false)
                * **exclude-trivial-rebase** (`bool`) -- exclude trivial rebase
-                 (Default: False)
+                 (default false)
                * **exclude-no-code-change** (`bool`) -- exclude no code change
-                 (Default: False)
+                 (default false)
 
            Exclude drafts|trivial-rebase|no-code-change needs
            Gerrit Trigger v2.12.0
@@ -547,18 +548,15 @@ def gerrit(parser, xml_parent, data):
                         False)).lower()
 
     build_gerrit_skip_votes(gtrig, data)
-    XML.SubElement(gtrig, 'silentMode').text = str(
-        data.get('silent', False)).lower()
-    XML.SubElement(gtrig, 'silentStartMode').text = str(
-        data.get('silent-start', False)).lower()
-    XML.SubElement(gtrig, 'escapeQuotes').text = str(
-        data.get('escape-quotes', True)).lower()
-    XML.SubElement(gtrig, 'noNameAndEmailParameters').text = str(
-        data.get('no-name-and-email', False)).lower()
-    XML.SubElement(gtrig, 'readableMessage').text = str(
-        data.get('readable-message', False)).lower()
-    XML.SubElement(gtrig, 'dependencyJobsNames').text = str(
-        data.get('dependency-jobs', ''))
+    general_mappings = [
+        ('silent', 'silentMode', False),
+        ('silent-start', 'silentStartMode', False),
+        ('escape-quotes', 'escapeQuotes', True),
+        ('no-name-and-email', 'noNameAndEmailParameters', False),
+        ('readable-message', 'readableMessage', False),
+        ('dependency-jobs', 'dependencyJobsNames', ''),
+    ]
+    convert_mapping_to_xml(gtrig, data, general_mappings, fail_required=True)
     notification_levels = ['NONE', 'OWNER', 'OWNER_REVIEWERS', 'ALL',
                            'SERVER_DEFAULT']
     notification_level = data.get('notification-level', 'SERVER_DEFAULT')
@@ -602,21 +600,17 @@ def gerrit(parser, xml_parent, data):
                 # str(int(x)) makes input values like '+1' work
                 XML.SubElement(gtrig, xmlkey).text = str(
                     int(data.get(yamlkey)))
-    XML.SubElement(gtrig, 'buildStartMessage').text = str(
-        data.get('start-message', ''))
-    XML.SubElement(gtrig, 'buildFailureMessage').text = \
-        data.get('failure-message', '')
-    XML.SubElement(gtrig, 'buildSuccessfulMessage').text = str(
-        data.get('successful-message', ''))
-    XML.SubElement(gtrig, 'buildUnstableMessage').text = str(
-        data.get('unstable-message', ''))
-    XML.SubElement(gtrig, 'buildNotBuiltMessage').text = str(
-        data.get('notbuilt-message', ''))
-    XML.SubElement(gtrig, 'buildUnsuccessfulFilepath').text = str(
-        data.get('failure-message-file', ''))
-    XML.SubElement(gtrig, 'customUrl').text = str(data.get('custom-url', ''))
-    XML.SubElement(gtrig, 'serverName').text = str(
-        data.get('server-name', '__ANY__'))
+    message_mappings = [
+        ('start-message', 'buildStartMessage', ''),
+        ('failure-message', 'buildFailureMessage', ''),
+        ('successful-message', 'buildSuccessfulMessage', ''),
+        ('unstable-message', 'buildUnstableMessage', ''),
+        ('notbuilt-message', 'buildNotBuiltMessage', ''),
+        ('failure-message-file', 'buildUnsuccessfulFilepath', ''),
+        ('custom-url', 'customUrl', ''),
+        ('server-name', 'serverName', '__ANY__'),
+    ]
+    convert_mapping_to_xml(gtrig, data, message_mappings, fail_required=True)
 
 
 def pollscm(parser, xml_parent, data):
@@ -858,6 +852,8 @@ def github_pull_request(parser, xml_parent, data):
     :arg string started-status: the status comment to set when the build has
         been started (optional)
     :arg string status-url: the status URL to set (optional)
+    :arg bool status-add-test-results: add test result one-liner to status
+        message (optional)
     :arg string success-status: the status message to set if the job succeeds
         (optional)
     :arg string failure-status: the status message to set if the job fails
@@ -921,6 +917,7 @@ def github_pull_request(parser, xml_parent, data):
     triggered_status = data.get('triggered-status', '')
     started_status = data.get('started-status', '')
     status_url = data.get('status-url', '')
+    status_add_test_results = data.get('status-add-test-results', '')
     success_status = data.get('success-status', '')
     failure_status = data.get('failure-status', '')
     error_status = data.get('error-status', '')
@@ -931,6 +928,7 @@ def github_pull_request(parser, xml_parent, data):
         triggered_status or
         started_status or
         status_url or
+        status_add_test_results or
         success_status or
         failure_status or
         error_status
@@ -943,6 +941,21 @@ def github_pull_request(parser, xml_parent, data):
         error_status
     )
 
+    # is comment handling required?
+    success_comment = data.get('success-comment', '')
+    failure_comment = data.get('failure-comment', '')
+    error_comment = data.get('error-comment', '')
+    requires_job_comment = (
+        success_comment or
+        failure_comment or
+        error_comment
+    )
+
+    # We want to have only one 'extensions' subelement, even if both status
+    # handling and comment handling is needed.
+    if requires_status or requires_job_comment:
+        extensions = XML.SubElement(ghprb, 'extensions')
+
     # Both comment and status elements have this same type.  Using a const is
     # much easier to read than repeating the tokens for this class each time
     # it's used
@@ -950,7 +963,6 @@ def github_pull_request(parser, xml_parent, data):
     comment_type = comment_type + 'GhprbBuildResultMessage'
 
     if requires_status:
-        extensions = XML.SubElement(ghprb, 'extensions')
         simple_status = XML.SubElement(extensions,
                                        'org.jenkinsci.plugins'
                                        '.ghprb.extensions.status.'
@@ -967,6 +979,9 @@ def github_pull_request(parser, xml_parent, data):
         if status_url:
             XML.SubElement(simple_status, 'statusUrl').text = str(
                 status_url)
+        if status_add_test_results:
+            XML.SubElement(simple_status, 'addTestResults').text = str(
+                status_add_test_results).lower()
 
         if requires_status_message:
             completed_elem = XML.SubElement(simple_status, 'completedStatus')
@@ -985,19 +1000,8 @@ def github_pull_request(parser, xml_parent, data):
                 XML.SubElement(error_elem, 'message').text = str(error_status)
                 XML.SubElement(error_elem, 'result').text = 'ERROR'
 
-    # comment fields
-    success_comment = data.get('success-comment', '')
-    failure_comment = data.get('failure-comment', '')
-    error_comment = data.get('error-comment', '')
-    requires_job_comment = (
-        success_comment or
-        failure_comment or
-        error_comment
-    )
-
     # job comment handling
     if requires_job_comment:
-        extensions = XML.SubElement(ghprb, 'extensions')
         build_status = XML.SubElement(extensions,
                                       'org.jenkinsci.plugins.ghprb.extensions'
                                       '.comments.'
@@ -1058,25 +1062,25 @@ def gitlab(parser, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`Gitlab Plugin.
     <Gitlab+Plugin>`.
 
-    :arg bool trigger-push: Build on Push Events (default: true)
-    :arg bool trigger-merge-request: Build on Merge Request Events (default:
+    :arg bool trigger-push: Build on Push Events (default true)
+    :arg bool trigger-merge-request: Build on Merge Request Events (default
         True)
     :arg bool trigger-open-merge-request-push: Rebuild open Merge Requests on
-        Push Events (default: True)
-    :arg bool ci-skip: Enable [ci-skip] (default True)
+        Push Events (default true)
+    :arg bool ci-skip: Enable [ci-skip] (default true)
     :arg bool set-build-description: Set build description to build cause
-        (eg. Merge request or Git Push ) (default: True)
+        (eg. Merge request or Git Push ) (default true)
     :arg bool add-note-merge-request: Add note with build status on
-        merge requests (default: True)
+        merge requests (default true)
     :arg bool add-vote-merge-request: Vote added to note with build status
-        on merge requests (default: True)
-    :arg bool add-ci-message: Add CI build status (default: False)
+        on merge requests (default true)
+    :arg bool add-ci-message: Add CI build status (default false)
     :arg bool allow-all-branches: Allow all branches (Ignoring Filtered
-        Branches) (default: False)
+        Branches) (default false)
     :arg list include-branches: Defined list of branches to include
-        (default: [])
+        (default [])
     :arg list exclude-branches: Defined list of branches to exclude
-        (default: [])
+        (default [])
 
     Example:
 
@@ -1483,35 +1487,41 @@ def script(parser, xml_parent, data):
 
     :arg str label: Restrict where the polling should run. (default '')
     :arg str script: A shell or batch script. (default '')
-    :arg str script-file-path: A shell or batch script path. (optional)
+    :arg str script-file-path: A shell or batch script path. (default '')
     :arg str cron: cron syntax of when to run (default '')
     :arg bool enable-concurrent:  Enables triggering concurrent builds.
                                   (default false)
     :arg int exit-code:  If the exit code of the script execution returns this
                          expected exit code, a build is scheduled. (default 0)
 
-    Example:
+    Full Example:
 
-    .. literalinclude:: /../../tests/triggers/fixtures/script001.yaml
+    .. literalinclude:: /../../tests/triggers/fixtures/script-full.yaml
+       :language: yaml
+
+    Minimal Example:
+
+    .. literalinclude:: /../../tests/triggers/fixtures/script-minimal.yaml
+       :language: yaml
     """
-    data = data if data else {}
     st = XML.SubElement(
         xml_parent,
         'org.jenkinsci.plugins.scripttrigger.ScriptTrigger'
     )
+    st.set('plugin', 'scripttrigger')
     label = data.get('label')
+    mappings = [
+        ('script', 'script', ''),
+        ('script-file-path', 'scriptFilePath', ''),
+        ('cron', 'spec', ''),
+        ('enable-concurrent', 'enableConcurrentBuild', False),
+        ('exit-code', 'exitCode', 0)
+    ]
+    convert_mapping_to_xml(st, data, mappings, fail_required=True)
 
-    XML.SubElement(st, 'script').text = str(data.get('script', ''))
-    if 'script-file-path' in data:
-        XML.SubElement(st, 'scriptFilePath').text = str(
-            data.get('script-file-path'))
-    XML.SubElement(st, 'spec').text = str(data.get('cron', ''))
     XML.SubElement(st, 'labelRestriction').text = str(bool(label)).lower()
     if label:
         XML.SubElement(st, 'triggerLabel').text = label
-    XML.SubElement(st, 'enableConcurrentBuild').text = str(
-        data.get('enable-concurrent', False)).lower()
-    XML.SubElement(st, 'exitCode').text = str(data.get('exit-code', 0))
 
 
 def groovy_script(parser, xml_parent, data):
@@ -1528,35 +1538,42 @@ def groovy_script(parser, xml_parent, data):
       evaluated to true, a build is scheduled. (default '')
     :arg str script-file-path: Groovy script path. (default '')
     :arg str property-file-path: Property file path. All properties will be set
-      as parameters for the triggered build. (optional)
+      as parameters for the triggered build. (default '')
     :arg bool enable-concurrent: Enable concurrent build. (default false)
     :arg str label: Restrict where the polling should run. (default '')
     :arg str cron: cron syntax of when to run (default '')
 
-    Example:
+    Full Example:
 
-    .. literalinclude:: /../../tests/triggers/fixtures/groovy-script.yaml
+    .. literalinclude:: /../../tests/triggers/fixtures/groovy-script-full.yaml
+       :language: yaml
+
+    Minimal Example:
+
+    .. literalinclude::
+        /../../tests/triggers/fixtures/groovy-script-minimal.yaml
+       :language: yaml
     """
     gst = XML.SubElement(
         xml_parent,
         'org.jenkinsci.plugins.scripttrigger.groovy.GroovyScriptTrigger'
     )
+    gst.set('plugin', 'scripttrigger')
 
-    XML.SubElement(gst, 'groovySystemScript').text = str(
-        data.get('system-script', False)).lower()
-    XML.SubElement(gst, 'groovyExpression').text = str(data.get('script', ''))
-    XML.SubElement(gst, 'groovyFilePath').text = str(data.get(
-        'script-file-path', ''))
-    if 'property-file-path' in data:
-        XML.SubElement(gst, 'propertiesFilePath').text = str(
-            data.get('property-file-path'))
-    XML.SubElement(gst, 'enableConcurrentBuild').text = str(
-        data.get('enable-concurrent', False)).lower()
+    mappings = [
+        ('system-script', 'groovySystemScript', False),
+        ('script', 'groovyExpression', ''),
+        ('script-file-path', 'groovyFilePath', ''),
+        ('property-file-path', 'propertiesFilePath', ''),
+        ('enable-concurrent', 'enableConcurrentBuild', False),
+        ('cron', 'spec', ''),
+    ]
+    convert_mapping_to_xml(gst, data, mappings, fail_required=True)
+
     label = data.get('label')
     XML.SubElement(gst, 'labelRestriction').text = str(bool(label)).lower()
     if label:
         XML.SubElement(gst, 'triggerLabel').text = label
-    XML.SubElement(gst, 'spec').text = str(data.get('cron', ''))
 
 
 def rabbitmq(parser, xml_parent, data):

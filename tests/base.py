@@ -27,13 +27,12 @@ import re
 import xml.etree.ElementTree as XML
 
 import fixtures
-from six.moves import configparser
 from six.moves import StringIO
 import testtools
 from testtools.content import text_content
 from yaml import safe_dump
 
-from jenkins_jobs.cmd import DEFAULT_CONF
+from jenkins_jobs.config import JJBConfig
 import jenkins_jobs.local_yaml as yaml
 from jenkins_jobs.modules import project_externaljob
 from jenkins_jobs.modules import project_flow
@@ -131,18 +130,16 @@ class BaseTestCase(LoggingFixture):
         return yaml_content
 
     def _get_config(self):
-        config = configparser.ConfigParser()
-        config.readfp(StringIO(DEFAULT_CONF))
-        if self.conf_filename is not None:
-            with io.open(self.conf_filename, 'r', encoding='utf-8') as cf:
-                config.readfp(cf)
-        return config
+        jjb_config = JJBConfig(self.conf_filename)
+        jjb_config.validate()
+
+        return jjb_config
 
     def test_yaml_snippet(self):
         if not self.in_filename:
             return
 
-        config = self._get_config()
+        jjb_config = self._get_config()
 
         expected_xml = self._read_utf8_content()
         yaml_content = self._read_yaml_content(self.in_filename)
@@ -155,7 +152,7 @@ class BaseTestCase(LoggingFixture):
             self.addDetail("plugins-info",
                            text_content(str(plugins_info)))
 
-        parser = YamlParser(config, plugins_info)
+        parser = YamlParser(jjb_config, plugins_info)
 
         pub = self.klass(parser.registry)
 

@@ -12,10 +12,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-import logging
 import xml.etree.ElementTree as XML
-
-from six.moves import configparser
 
 from jenkins_jobs.errors import InvalidAttributeError
 from jenkins_jobs.errors import JenkinsJobsException
@@ -254,19 +251,10 @@ def findbugs_settings(xml_parent, data):
 
 
 def get_value_from_yaml_or_config_file(key, section, data, parser):
-    logger = logging.getLogger(__name__)
     result = data.get(key, '')
+    jjb_config = parser.jjb_config
     if result == '':
-        try:
-            result = parser.config.get(
-                section, key
-            )
-        except (configparser.NoSectionError, configparser.NoOptionError,
-                JenkinsJobsException) as e:
-            logger.warning("You didn't set a " + key +
-                           " neither in the yaml job definition nor in" +
-                           " the " + section + " section, blank default" +
-                           " value will be applied:\n{0}".format(e))
+        result = jjb_config.get_module_config(section, key)
     return result
 
 
@@ -446,6 +434,40 @@ def append_git_revision_config(parent, config_def):
     XML.SubElement(params, 'combineQueuedCommits').text = combine_commits
 
 
+def test_fairy_common(xml_element, data):
+    xml_element.set('plugin', 'TestFairy')
+
+    mappings = [
+        # General
+        ('apikey', 'apiKey', None),
+        ('appfile', 'appFile', None),
+        ('tester-groups', 'testersGroups', ''),
+        ('notify-testers', 'notifyTesters', True),
+        ('autoupdate', 'autoUpdate', True),
+        # Session
+        ('max-duration', 'maxDuration', '10m'),
+        ('record-on-background', 'recordOnBackground', False),
+        ('data-only-wifi', 'dataOnlyWifi', False),
+        # Video
+        ('video-enabled', 'isVideoEnabled', True),
+        ('screenshot-interval', 'screenshotInterval', '1'),
+        ('video-quality', 'videoQuality', 'high'),
+        # Metrics
+        ('cpu', 'cpu', True),
+        ('memory', 'memory', True),
+        ('logs', 'logs', True),
+        ('network', 'network', False),
+        ('phone-signal', 'phoneSignal', False),
+        ('wifi', 'wifi', False),
+        ('gps', 'gps', False),
+        ('battery', 'battery', False),
+        ('opengl', 'openGl', False),
+        # Advanced options
+        ('advanced-options', 'advancedOptions', '')
+    ]
+    convert_mapping_to_xml(xml_element, data, mappings, fail_required=True)
+
+
 def convert_mapping_to_xml(parent, data, mapping, fail_required=False):
     """Convert mapping to XML
 
@@ -458,10 +480,18 @@ def convert_mapping_to_xml(parent, data, mapping, fail_required=False):
     configuring the XML tag for the parameter. We recommend for new plugins to
     set fail_required=True and instead of optional parameters provide a default
     value for all paramters that are not required instead.
+
+    valid_options provides a way to check if the value the user input is from a
+    list of available options. When the user pass a value that is not supported
+    from the list, it raise an InvalidAttributeError.
     """
     for elem in mapping:
-        (optname, xmlname, val) = elem
+        (optname, xmlname, val) = elem[:3]
         val = data.get(optname, val)
+
+        valid_options = []
+        if len(elem) == 4:
+            valid_options = elem[3]
 
         # Use fail_required setting to allow support for optional parameters
         # we will phase this out in the future as we rework plugins so that
@@ -474,6 +504,10 @@ def convert_mapping_to_xml(parent, data, mapping, fail_required=False):
         # up to the user if they want to use an empty XML tag
         if val is None and fail_required is False:
             continue
+
+        if valid_options:
+            if val not in valid_options:
+                raise InvalidAttributeError(optname, val, valid_options)
 
         if type(val) == bool:
             val = str(val).lower()

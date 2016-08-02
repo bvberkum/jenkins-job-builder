@@ -391,6 +391,8 @@ def trigger_builds(parser, xml_parent, data):
     :arg str node-label: Label of the nodes where build should be triggered.
         Used in conjunction with node-label-name.  Requires NodeLabel Parameter
         Plugin (optional)
+    :arg str restrict-matrix-project: Filter that restricts the subset
+        of the combinations that the triggered job will run (optional)
     :arg bool svn-revision: Whether to pass the svn revision to the triggered
         job (optional)
     :arg dict git-revision: Passes git revision to the triggered job
@@ -454,6 +456,10 @@ def trigger_builds(parser, xml_parent, data):
               should be triggered
             * **ignore-offline-nodes** (`bool`) -- Don't trigger build on
               offline nodes (default true)
+
+        :Factory:
+            * **factory** (`str`) **allonlinenodes** -- Trigger a build on
+              every online node. Requires NodeLabel Parameter Plugin (optional)
 
     Examples:
 
@@ -545,6 +551,13 @@ def trigger_builds(parser, xml_parent, data):
             XML.SubElement(node, 'name').text = project_def['node-label-name']
             XML.SubElement(node, 'nodeLabel').text = project_def['node-label']
 
+        if 'restrict-matrix-project' in project_def:
+            params = XML.SubElement(tconfigs,
+                                    'hudson.plugins.parameterizedtrigger.'
+                                    'matrix.MatrixSubsetBuildParameters')
+            XML.SubElement(params, 'filter').text = project_def[
+                'restrict-matrix-project']
+
         if(len(list(tconfigs)) == 0):
             tconfigs.set('class', 'java.util.Collections$EmptyList')
 
@@ -554,7 +567,8 @@ def trigger_builds(parser, xml_parent, data):
             supported_factories = ['filebuild',
                                    'binaryfile',
                                    'counterbuild',
-                                   'allnodesforlabel']
+                                   'allnodesforlabel',
+                                   'allonlinenodes']
             supported_actions = ['SKIP', 'NOPARMS', 'FAIL']
             for factory in project_def['parameter-factories']:
 
@@ -627,6 +641,12 @@ def trigger_builds(parser, xml_parent, data):
                         'ignoreOfflineNodes')
                     ignoreOfflineNodes.text = str(factory.get(
                         'ignore-offline-nodes', True)).lower()
+                if factory['factory'] == 'allonlinenodes':
+                    params = XML.SubElement(
+                        fconfigs,
+                        'org.jvnet.jenkins.plugins.nodelabelparameter.'
+                        'parameterizedtrigger.'
+                        'AllNodesBuildParameterFactory')
 
         projects = XML.SubElement(tconfig, 'projects')
         if isinstance(project_def['project'], list):
@@ -718,9 +738,9 @@ def http_request(parser, xml_parent, data):
             * **HEAD**
     :arg str content-type: Add 'Content-type: foo' HTTP request headers
         where foo is the http content-type the request is using.
-        (default: NOT_SET)
+        (default NOT_SET)
     :arg str accept-type: Add 'Accept: foo' HTTP request headers
-        where foo is the http content-type to accept (default: NOT_SET)
+        where foo is the http content-type to accept (default NOT_SET)
 
         :content-type and accept-type values:
             * **NOT_SET**
@@ -730,21 +750,21 @@ def http_request(parser, xml_parent, data):
             * **APPLICATION_ZIP**
             * **APPLICATION_OCTETSTREAM**
     :arg str output-file: Name of the file in which to write response data
-        (default: '')
-    :arg int time-out: Specify a timeout value in seconds (default: 0)
+        (default '')
+    :arg int time-out: Specify a timeout value in seconds (default 0)
     :arg bool console-log: This allows you to turn off writing the response
-        body to the log (default: False)
+        body to the log (default false)
     :arg bool pass-build: Should build parameters be passed to the URL
-        being called (default: False)
+        being called (default false)
     :arg str valid-response-codes: Configure response code to mark an
         execution as success. You can configure simple code such as "200"
         or multiple codes separeted by comma(',') e.g. "200,404,500"
         Interval of codes should be in format From:To e.g. "100:399".
         The default (as if empty) is to fail to 4xx and 5xx.
         That means success from 100 to 399 "100:399"
-        To ignore any response code use "100:599". (default: '')
+        To ignore any response code use "100:599". (default '')
     :arg str valid-response-content: If set response must contain this string
-        to mark an execution as success (default: '')
+        to mark an execution as success (default '')
     :arg str authentication-key: Authentication that will be used before this
         request. Authentications are created in global configuration under a
         key name that is selected here.
@@ -1206,7 +1226,7 @@ def conditional_step(parser, xml_parent, data):
                            casues causing a build to be triggered, with
                            this true, the cause must be the only one
                            causing this build this build to be triggered.
-                           (default False)
+                           (default false)
     day-of-week        Only run on specific days of the week.
 
                          :day-selector: Days you want the build to run on.
@@ -1221,16 +1241,16 @@ def conditional_step(parser, xml_parent, data):
                              day-selector, at the same level as day-selector.
                              Define the days to run under this.
 
-                             :SUN: Run on Sunday (default False)
-                             :MON: Run on Monday (default False)
-                             :TUES: Run on Tuesday (default False)
-                             :WED: Run on Wednesday (default False)
-                             :THURS: Run on Thursday (default False)
-                             :FRI: Run on Friday (default False)
-                             :SAT: Run on Saturday (default False)
+                             :SUN: Run on Sunday (default false)
+                             :MON: Run on Monday (default false)
+                             :TUES: Run on Tuesday (default false)
+                             :WED: Run on Wednesday (default false)
+                             :THURS: Run on Thursday (default false)
+                             :FRI: Run on Friday (default false)
+                             :SAT: Run on Saturday (default false)
                          :use-build-time: (bool) Use the build time instead of
                            the the time that the condition is evaluated.
-                           (default False)
+                           (default false)
     execution-node     Run only on selected nodes.
 
                          :nodes: (list) List of nodes to execute on. (required)
@@ -1239,7 +1259,7 @@ def conditional_step(parser, xml_parent, data):
                          :condition-string1: First string (optional)
                          :condition-string2: Second string (optional)
                          :condition-case-insensitive: Case insensitive
-                           (default False)
+                           (default false)
     current-status     Run the build step if the current build status is
                        within the configured range
 
@@ -1303,7 +1323,7 @@ def conditional_step(parser, xml_parent, data):
                          :latest-min: Ending min (default "30")
                          :use-build-time: (bool) Use the build time instead of
                            the the time that the condition is evaluated.
-                           (default False)
+                           (default false)
     not                Run the step if the inverse of the condition-operand
                        is true
 
@@ -1715,6 +1735,12 @@ def multijob(parser, xml_parent, data):
             * **restrict-matrix-project** (`str`) -- Filter that
               restricts the subset of the combinations that the
               downstream project will run (optional)
+            * **retry** (`dict`): Enable retry strategy (optional)
+                :retry:
+                    * **max-retry** (`int`) -- Max number of retries
+                      (default 0)
+                    * **strategy-path** (`str`) -- Parsing rules path
+                      (required)
 
     Example:
 
@@ -1798,6 +1824,20 @@ def multijob(parser, xml_parent, data):
         abortAllJob = str(project.get('abort-all-job', False)).lower()
         XML.SubElement(phaseJob, 'abortAllJob').text = abortAllJob
 
+        # Retry job
+        retry = project.get('retry', False)
+        if retry:
+            try:
+                rules_path = str(retry['strategy-path'])
+                XML.SubElement(phaseJob, 'parsingRulesPath').text = rules_path
+            except KeyError:
+                raise MissingAttributeError('strategy-path')
+            max_retry = retry.get('max-retry', 0)
+            XML.SubElement(phaseJob, 'maxRetries').text = str(int(max_retry))
+            XML.SubElement(phaseJob, 'enableRetryStrategy').text = 'true'
+        else:
+            XML.SubElement(phaseJob, 'enableRetryStrategy').text = 'false'
+
         # Restrict matrix jobs to a subset
         if project.get('restrict-matrix-project') is not None:
             subset = XML.SubElement(
@@ -1846,9 +1886,9 @@ def config_file_provider(parser, xml_parent, data):
             * **file-id** (`str`) -- The identifier for the managed config
               file
             * **target** (`str`) -- Define where the file should be created
-              (optional)
+              (default '')
             * **variable** (`str`) -- Define an environment variable to be
-              used (optional)
+              used (default '')
 
     Example:
 
@@ -2149,8 +2189,8 @@ def tox(parser, xml_parent, data):
     Use tox to build a multi-configuration project. Requires the Jenkins
     :jenkins-wiki:`ShiningPanda plugin <ShiningPanda+Plugin>`.
 
-    :arg str ini: The TOX configuration file path (default: tox.ini)
-    :arg bool recreate: If true, create a new environment each time (default:
+    :arg str ini: The TOX configuration file path (default tox.ini)
+    :arg bool recreate: If true, create a new environment each time (default
         false)
     :arg str toxenv-pattern: The pattern used to build the TOXENV environment
         variable. (optional)
@@ -2526,6 +2566,69 @@ def github_notifier(parser, xml_parent, data):
                    'com.cloudbees.jenkins.GitHubSetCommitStatusBuilder')
 
 
+def scan_build(parser, xml_parent, data):
+    """yaml: scan-build
+    This plugin allows you configure a build step that will execute the Clang
+    scan-build static analysis tool against an XCode project.
+
+    The scan-build report has to be generated in the directory
+    ``${WORKSPACE}/clangScanBuildReports`` for the publisher to find it.
+
+    Requires the Jenkins :jenkins-wiki:`Clang Scan-Build Plugin
+    <Clang+Scan-Build+Plugin>`.
+
+    :arg str target: Provide the exact name of the XCode target you wish to
+        have compiled and analyzed (required)
+    :arg str target-sdk: Set the simulator version of a currently installed SDK
+        (default iphonesimulator)
+    :arg str config: Provide the XCode config you wish to execute scan-build
+        against (default Debug)
+    :arg str clang-install-name: Name of clang static analyzer to use (default
+        '')
+    :arg str xcode-sub-path: Path of XCode project relative to the workspace
+        (default '')
+    :arg str workspace: Name of workspace (default '')
+    :arg str scheme: Name of scheme (default '')
+    :arg str scan-build-args: Additional arguments to clang scan-build
+        (default --use-analyzer Xcode)
+    :arg str xcode-build-args: Additional arguments to XCode (default
+        -derivedDataPath $WORKSPACE/build)
+    :arg str report-folder: Folder where generated reports are located
+        (>=1.7) (default clangScanBuildReports)
+
+    Full Example:
+
+    .. literalinclude:: /../../tests/builders/fixtures/scan-build-full.yaml
+       :language: yaml
+
+    Minimal Example:
+
+    .. literalinclude::
+       /../../tests/builders/fixtures/scan-build-minimal.yaml
+       :language: yaml
+    """
+    p = XML.SubElement(
+        xml_parent,
+        'jenkins.plugins.clangscanbuild.ClangScanBuildBuilder')
+    p.set('plugin', 'clang-scanbuild')
+
+    mappings = [
+        ('target', 'target', None),
+        ('target-sdk', 'targetSdk', 'iphonesimulator'),
+        ('config', 'config', 'Debug'),
+        ('clang-install-name', 'clangInstallationName', ''),
+        ('xcode-sub-path', 'xcodeProjectSubPath', 'myProj/subfolder'),
+        ('workspace', 'workspace', ''),
+        ('scheme', 'scheme', ''),
+        ('scan-build-args', 'scanbuildargs', '--use-analyzer Xcode'),
+        ('xcode-build-args',
+         'xcodebuildargs',
+         '-derivedDataPath $WORKSPACE/build'),
+        ('report-folder', 'outputFolderName', 'clangScanBuildReports'),
+    ]
+    convert_mapping_to_xml(p, data, mappings, fail_required=True)
+
+
 def ssh_builder(parser, xml_parent, data):
     """yaml: ssh-builder
     Executes command on remote host
@@ -2559,10 +2662,12 @@ def sonar(parser, xml_parent, data):
         AnalyzingwiththeSonarQubeScanner>`_
 
     :arg str sonar-name: Name of the Sonar installation.
-    :arg str task: Task to run. (optional)
-    :arg str project: Path to Sonar project properties file. (optional)
-    :arg str properties: Sonar configuration properties. (optional)
-    :arg str java-opts: Java options for Sonnar Runner. (optional)
+    :arg str task: Task to run. (default '')
+    :arg str project: Path to Sonar project properties file. (default '')
+    :arg str properties: Sonar configuration properties. (default '')
+    :arg str java-opts: Java options for Sonnar Runner. (default '')
+    :arg str additional-arguments: additional command line arguments
+        (default '')
     :arg str jdk: JDK to use (inherited from the job if omitted). (optional)
 
     Example:
@@ -2572,11 +2677,16 @@ def sonar(parser, xml_parent, data):
     """
     sonar = XML.SubElement(xml_parent,
                            'hudson.plugins.sonar.SonarRunnerBuilder')
+    sonar.set('plugin', 'sonar')
     XML.SubElement(sonar, 'installationName').text = data['sonar-name']
-    XML.SubElement(sonar, 'task').text = data.get('task', '')
-    XML.SubElement(sonar, 'project').text = data.get('project', '')
-    XML.SubElement(sonar, 'properties').text = data.get('properties', '')
-    XML.SubElement(sonar, 'javaOpts').text = data.get('java-opts', '')
+    mappings = [
+        ('task', 'task', ''),
+        ('project', 'project', ''),
+        ('properties', 'properties', ''),
+        ('java-opts', 'javaOpts', ''),
+        ('additional-arguments', 'additionalArguments', ''),
+    ]
+    convert_mapping_to_xml(sonar, data, mappings, fail_required=True)
     if 'jdk' in data:
         XML.SubElement(sonar, 'jdk').text = data['jdk']
 
@@ -2587,23 +2697,23 @@ def sonatype_clm(parser, xml_parent, data):
     <Sonatype+CLM+%28formerly+Insight+for+CI%29>`.
 
     :arg str value: Select CLM application from a list of available CLM
-        applications or specify CLM Application ID (default: list)
+        applications or specify CLM Application ID (default list)
     :arg str application-name: Determines the policy elements to associate
         with this build. (required)
     :arg str username: Username on the Sonatype CLM server. Leave empty to
-        use the username configured at global level. (default: '')
+        use the username configured at global level. (default '')
     :arg str password: Password on the Sonatype CLM server. Leave empty to
-        use the password configured at global level. (default: '')
+        use the password configured at global level. (default '')
     :arg bool fail-on-clm-server-failure: Controls the build outcome if there
-        is a failure in communicating with the CLM server. (default: False)
+        is a failure in communicating with the CLM server. (default false)
     :arg str stage: Controls the stage the policy evaluation will be run
         against on the CLM server. Valid stages: build, stage-release, release,
-        operate. (default: 'build')
+        operate. (default 'build')
     :arg str scan-targets: Pattern of files to include for scanning.
-        (default: '')
-    :arg str module-excludes: Pattern of files to exclude. (default: '')
+        (default '')
+    :arg str module-excludes: Pattern of files to exclude. (default '')
     :arg str advanced-options: Options to be set on a case-by-case basis as
-        advised by Sonatype Support. (default: '')
+        advised by Sonatype Support. (default '')
 
     Minimal Example:
 
@@ -2620,24 +2730,13 @@ def sonatype_clm(parser, xml_parent, data):
     clm = XML.SubElement(xml_parent,
                          'com.sonatype.insight.ci.hudson.PreBuildScan')
     clm.set('plugin', 'sonatype-clm-ci')
-
     SUPPORTED_VALUES = ['list', 'manual']
-    clm_value = data.get('value')
-    if clm_value and clm_value not in SUPPORTED_VALUES:
-        raise InvalidAttributeError('value',
-                                    clm_value,
-                                    SUPPORTED_VALUES)
     SUPPORTED_STAGES = ['build', 'stage-release', 'release', 'operate']
-    clm_stage = data.get('stage')
-    if clm_stage and clm_stage not in SUPPORTED_STAGES:
-        raise InvalidAttributeError('stage',
-                                    clm_stage,
-                                    SUPPORTED_STAGES)
 
     application_select = XML.SubElement(clm,
                                         'applicationSelectType')
     application_mappings = [
-        ('value', 'value', 'list'),
+        ('value', 'value', 'list', SUPPORTED_VALUES),
         ('application-name', 'applicationId', None),
     ]
     convert_mapping_to_xml(
@@ -2653,7 +2752,7 @@ def sonatype_clm(parser, xml_parent, data):
 
     mappings = [
         ('fail-on-clm-server-failure', 'failOnClmServerFailures', False),
-        ('stage', 'stageId', 'build'),
+        ('stage', 'stageId', 'build', SUPPORTED_STAGES),
         ('username', 'username', ''),
         ('password', 'password', ''),
     ]
@@ -2760,9 +2859,9 @@ def openshift_build_verify(parser, xml_parent, data):
     :arg str namespace: If you run `oc get bc` for the project listed in
         "namespace", that is the value you want to put here. (default 'test')
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        option when invoking the OpenShift `oc` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
 
     Full Example:
 
@@ -2779,16 +2878,16 @@ def openshift_build_verify(parser, xml_parent, data):
     osb = XML.SubElement(xml_parent,
                          'com.openshift.jenkins.plugins.pipeline.'
                          'OpenShiftBuildVerifier')
+
     mapping = [
         # option, xml name, default value
         ("api-url", 'apiURL', 'https://openshift.default.svc.cluster.local'),
         ("bld-cfg", 'bldCfg', 'frontend'),
         ("namespace", 'namespace', 'test'),
         ("auth-token", 'authToken', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
     ]
-
-    convert_mapping_to_xml(osb, data, mapping)
+    convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def openshift_builder(parser, xml_parent, data):
@@ -2806,17 +2905,17 @@ def openshift_builder(parser, xml_parent, data):
     :arg str namespace: If you run `oc get bc` for the project listed in
         "namespace", that is the value you want to put here. (default 'test')
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
+        option when invoking the OpenShift `oc` command. (default '')
     :arg str commit-ID: The value here is what you supply with the
         --commit option when invoking the
-        OpenShift `oc start-build` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        OpenShift `oc start-build` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
     :arg str build-name: TThe value here is what you supply with the
         --from-build option when invoking the
-        OpenShift `oc start-build` command. (optional)
-    :arg str show-build-logs: Indicates whether the build logs get dumped
-        to the console of the Jenkins build. (default 'false')
+        OpenShift `oc start-build` command. (default '')
+    :arg bool show-build-logs: Indicates whether the build logs get dumped
+        to the console of the Jenkins build. (default false)
 
 
     Full Example:
@@ -2840,12 +2939,11 @@ def openshift_builder(parser, xml_parent, data):
         ("namespace", 'namespace', 'test'),
         ("auth-token", 'authToken', ''),
         ("commit-ID", 'commitID', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
         ("build-name", 'buildName', ''),
-        ("show-build-logs", 'showBuildLogs', 'false'),
+        ("show-build-logs", 'showBuildLogs', False),
     ]
-
-    convert_mapping_to_xml(osb, data, mapping)
+    convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def openshift_creator(parser, xml_parent, data):
@@ -2861,13 +2959,13 @@ def openshift_creator(parser, xml_parent, data):
         --server option on the OpenShift `oc` command.
         (default '\https://openshift.default.svc.cluster.local')
     :arg str jsonyaml: The JSON or YAML formatted text that conforms to
-        the schema for defining the various OpenShift resources. (optional)
+        the schema for defining the various OpenShift resources. (default '')
     :arg str namespace: If you run `oc get bc` for the project listed in
         "namespace", that is the value you want to put here. (default 'test')
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        option when invoking the OpenShift `oc` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
 
     Full Example:
 
@@ -2884,16 +2982,16 @@ def openshift_creator(parser, xml_parent, data):
     osb = XML.SubElement(xml_parent,
                          'com.openshift.jenkins.plugins.pipeline.'
                          'OpenShiftCreator')
+
     mapping = [
         # option, xml name, default value
         ("api-url", 'apiURL', 'https://openshift.default.svc.cluster.local'),
         ("jsonyaml", 'jsonyaml', ''),
         ("namespace", 'namespace', 'test'),
         ("auth-token", 'authToken', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
     ]
-
-    convert_mapping_to_xml(osb, data, mapping)
+    convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def openshift_dep_verify(parser, xml_parent, data):
@@ -2912,12 +3010,12 @@ def openshift_dep_verify(parser, xml_parent, data):
         Build on (default frontend)
     :arg str namespace: If you run `oc get bc` for the project listed in
         "namespace", that is the value you want to put here. (default test)
-    :arg str replica-count: The value here should be whatever the number
+    :arg int replica-count: The value here should be whatever the number
         of pods you want started for the deployment. (default 0)
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        option when invoking the OpenShift `oc` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
 
     Full Example:
 
@@ -2942,10 +3040,9 @@ def openshift_dep_verify(parser, xml_parent, data):
         ("namespace", 'namespace', 'test'),
         ("replica-count", 'replicaCount', 0),
         ("auth-token", 'authToken', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
     ]
-
-    convert_mapping_to_xml(osb, data, mapping)
+    convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def openshift_deployer(parser, xml_parent, data):
@@ -2963,9 +3060,9 @@ def openshift_deployer(parser, xml_parent, data):
     :arg str namespace: If you run `oc get bc` for the project listed in
         "namespace", that is the value you want to put here. (default 'test')
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        option when invoking the OpenShift `oc` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
 
     Full Example:
 
@@ -2989,10 +3086,9 @@ def openshift_deployer(parser, xml_parent, data):
         ("dep-cfg", 'depCfg', 'frontend'),
         ("namespace", 'namespace', 'test'),
         ("auth-token", 'authToken', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
     ]
-
-    convert_mapping_to_xml(osb, data, mapping)
+    convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def openshift_img_tagger(parser, xml_parent, data):
@@ -3014,9 +3110,9 @@ def openshift_img_tagger(parser, xml_parent, data):
     :arg str namespace: If you run `oc get bc` for the project listed in
         "namespace", that is the value you want to put here. (default 'test')
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        option when invoking the OpenShift `oc` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
 
     Full Example:
 
@@ -3041,10 +3137,9 @@ def openshift_img_tagger(parser, xml_parent, data):
         ("prod-tag", 'prodTag', 'origin-nodejs-sample:prod'),
         ("namespace", 'namespace', 'test'),
         ("auth-token", 'authToken', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
     ]
-
-    convert_mapping_to_xml(osb, data, mapping)
+    convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def openshift_scaler(parser, xml_parent, data):
@@ -3064,9 +3159,9 @@ def openshift_scaler(parser, xml_parent, data):
     :arg int replica-count: The value here should be whatever the number
         of pods you want started for the deployment. (default 0)
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        option when invoking the OpenShift `oc` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
 
     Full Example:
 
@@ -3089,10 +3184,9 @@ def openshift_scaler(parser, xml_parent, data):
         ("namespace", 'namespace', 'test'),
         ("replica-count", 'replicaCount', 0),
         ("auth-token", 'authToken', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
     ]
-
-    convert_mapping_to_xml(osb, data, mapping)
+    convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def openshift_svc_verify(parser, xml_parent, data):
@@ -3109,9 +3203,9 @@ def openshift_svc_verify(parser, xml_parent, data):
     :arg str namespace: If you run `oc get bc` for the project listed in
         "namespace", that is the value you want to put here. (default 'test')
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        option when invoking the OpenShift `oc` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
 
     Full Example:
 
@@ -3135,10 +3229,9 @@ def openshift_svc_verify(parser, xml_parent, data):
         ("svc-name", 'svcName', 'frontend'),
         ("namespace", 'namespace', 'test'),
         ("auth-token", 'authToken', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
     ]
-
-    convert_mapping_to_xml(osb, data, mapping)
+    convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def runscope(parser, xml_parent, data):
@@ -3235,7 +3328,7 @@ def docker_build_publish(parse, xml_parent, data):
     XML.SubElement(db, 'skipTagLatest').text = str(
         data.get('skip-tag-latest', False)).lower()
     XML.SubElement(db, 'skipPush').text = str(
-        data.get('skip-', False)).lower()
+        data.get('skip-push', False)).lower()
     XML.SubElement(db, 'dockerfilePath').text = str(
         data.get('file-path', ''))
 
