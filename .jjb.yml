@@ -14,7 +14,7 @@
 
     project-type: freestyle
     disabled: false
-    node: master
+    node: treebox
 
     display-name: 'Jenkins Job Builder [openstack]'
     description: "OpenStack's Jenkins Job Builder [JJB], test run and coverage report."
@@ -33,6 +33,7 @@
     - git:
         url: 'git@github.com:dotmpe/jenkins-job-builder.git'
         skip-tag: true
+        credentials-id: 'jenkins-ssh-user-key-credentials'
         #credentials-id: '{credentials-id}'
         #browser: githubweb
         #browser-url: '{git-browser-url}'
@@ -63,10 +64,10 @@
     publishers:
 
     # detect errors and warnings and adjust build result accordingly
-    - logparser:
-        parse-rules: '/var/lib/jenkins/log-rules.txt'
-        unstable-on-warning: true
-        fail-on-error: true
+    #- logparser:
+    #    parse-rules: '/var/lib/jenkins/log-rules.txt'
+    #    unstable-on-warning: true
+    #    fail-on-error: true
 
     # don't send (OpenStack) committers mail
     - email:
