@@ -38,7 +38,7 @@
         #browser: githubweb
         #browser-url: '{git-browser-url}'
         branches:
-        - 'origin/f_pipeline_dsl'
+        - 'origin/original'
 
     builders:
     - shell: tox -e cover
