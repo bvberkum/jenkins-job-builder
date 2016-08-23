@@ -1,6 +1,4 @@
 
-# Config without using any reusable features, JJB YAML all enclosed here.
-
 
 - project:
     name: jjb
@@ -14,10 +12,28 @@
 
     project-type: freestyle
     disabled: false
-    node: master
+    node: treebox
 
     display-name: 'Jenkins Job Builder [openstack]'
-    description: "OpenStack's Jenkins Job Builder [JJB], test run and coverage report."
+    description: |
+      <p>OpenStack's Jenkins Job Builder [JJB], test run and coverage report 
+      (requires shiningpanda plugin).</p> 
+      <p>
+        Part of <code class="muted">dotmpe/jenkins-job-builder</code>,
+        <code>.jjb.yml</code>.
+      </p>
+
+    parameters:
+    - bool:
+        name: Build_Skip_Workspace_Delete
+        description: |
+          Don't drop the workspace with checkout at the end of the job (for 
+          inspection or faster rebuilds).
+        default: false
+    - bool:
+        name: DEBUG
+        description: Be more verbose on stdout/stderr.
+        default: false
 
     logrotate:
       daysToKeep: -1
@@ -33,11 +49,10 @@
     - git:
         url: 'git@github.com:dotmpe/jenkins-job-builder.git'
         skip-tag: true
+        credentials-id: 'jenkins-ssh-user-key-credentials'
         #credentials-id: '{credentials-id}'
-        #browser: githubweb
-        #browser-url: '{git-browser-url}'
         branches:
-        - 'origin/f_pipeline_dsl'
+        - 'origin/original'
 
     builders:
     - shell: tox -e cover
@@ -60,13 +75,9 @@
             <addColumns>false</addColumns>
           </org.jenkinsci.plugins.environmentdashboard.DashboardBuilder>
 
+
     publishers:
 
-    # detect errors and warnings and adjust build result accordingly
-    - logparser:
-        parse-rules: '/var/lib/jenkins/log-rules.txt'
-        unstable-on-warning: true
-        fail-on-error: true
 
     # don't send (OpenStack) committers mail
     - email:
@@ -109,6 +120,7 @@
             <isWarningsDeactivated>false</isWarningsDeactivated>
           </hudson.plugins.analysis.collector.AnalysisPublisher>
 
+
     # Scan for embedded issues
     - raw:
         xml:
@@ -140,29 +152,38 @@
             <low>XXX</low>
             <ignoreCase>false</ignoreCase>
             <asRegexp>false</asRegexp>
-            <pattern>*.{cfg,py,rst,ini},{jenkins_jobs,tests,tools}/**</pattern>
+            <pattern>*.cfg,*py,*.rst,*.ini,jenkins_jobs/**,tests/**,tools/**</pattern>
             <excludePattern/>
           </hudson.plugins.tasks.TasksPublisher>
+
 
     # Publish a nice HTML covarage report for this Python project
     - raw:
         xml:
           <jenkins.plugins.shiningpanda.publishers.CoveragePublisher plugin="shiningpanda@0.22"/>
 
+
     # Remove entire workspace dir after building
-    - raw:
-        xml:
-          <hudson.plugins.ws__cleanup.WsCleanup plugin="ws-cleanup@0.28">
-            <deleteDirs>false</deleteDirs>
-            <skipWhenFailed>false</skipWhenFailed>
-            <cleanWhenSuccess>true</cleanWhenSuccess>
-            <cleanWhenUnstable>true</cleanWhenUnstable>
-            <cleanWhenFailure>true</cleanWhenFailure>
-            <cleanWhenNotBuilt>true</cleanWhenNotBuilt>
-            <cleanWhenAborted>true</cleanWhenAborted>
-            <notFailBuild>false</notFailBuild>
-            <cleanupMatrixParent>false</cleanupMatrixParent>
-            <externalDelete/>
-          </hudson.plugins.ws__cleanup.WsCleanup>
+    - conditional-publisher:
+        - condition-kind: shell
+          condition-command: |
+            test "$Build_Skip_Workspace_Delete" = "true" \
+              && { echo "Skipping Workspace delete"; exit 1; } \
+              || exit 0
+          action:
+            - raw:
+                xml:
+                  <hudson.plugins.ws__cleanup.WsCleanup plugin="ws-cleanup@0.28">
+                    <deleteDirs>false</deleteDirs>
+                    <skipWhenFailed>false</skipWhenFailed>
+                    <cleanWhenSuccess>true</cleanWhenSuccess>
+                    <cleanWhenUnstable>true</cleanWhenUnstable>
+                    <cleanWhenFailure>true</cleanWhenFailure>
+                    <cleanWhenNotBuilt>true</cleanWhenNotBuilt>
+                    <cleanWhenAborted>true</cleanWhenAborted>
+                    <notFailBuild>false</notFailBuild>
+                    <cleanupMatrixParent>false</cleanupMatrixParent>
+                    <externalDelete/>
+                  </hudson.plugins.ws__cleanup.WsCleanup>
 
 
