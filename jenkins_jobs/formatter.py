@@ -19,6 +19,7 @@ import logging
 from pprint import pformat
 import re
 from string import Formatter
+from collections import OrderedDict
 
 from jenkins_jobs.errors import JenkinsJobsException
 
@@ -39,7 +40,7 @@ def deep_format(obj, paramdict, allow_empty=False):
                 ret = paramdict[result.group("key")]
             else:
                 ret = CustomFormatter(allow_empty).format(obj, **paramdict)
-        except KeyError as exc:
+        except (KeyError, ValueError) as exc:
             missing_key = exc.message
             desc = "%s parameter missing to format %s\nGiven:\n%s" % (
                 missing_key, obj, pformat(paramdict))
@@ -63,6 +64,11 @@ def deep_format(obj, paramdict, allow_empty=False):
         ret = obj
     return ret
 
+def is_complex(key, args, kwargs):
+    if isinstance(key, int):
+        return isinstance(args[key], (dict, list, OrderedDict))
+    elif isinstance(key, basestring):
+        return isinstance(kwargs[key], (dict, list, OrderedDict))
 
 class CustomFormatter(Formatter):
     """
@@ -75,7 +81,11 @@ class CustomFormatter(Formatter):
 
     def get_value(self, key, args, kwargs):
         try:
-            return Formatter.get_value(self, key, args, kwargs)
+            # XXX: Hack: format OrderedDict as regular dict on variable-expansion
+            if is_complex(key, args, kwargs):
+                return json.dumps(kwargs[key])
+            else:
+                return Formatter.get_value(self, key, args, kwargs)
         except KeyError:
             if self.allow_empty:
                 logger.debug(
