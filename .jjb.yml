@@ -169,18 +169,18 @@
         xml:
           <jenkins.plugins.shiningpanda.publishers.CoveragePublisher plugin="shiningpanda@0.22"/>
 
-    - archive:
-        artifacts: "$BUILD_DIR/**/*,config/**/*"
-        description: One instance allowed. Moves the files to builds/BUILD_NUMBER/archive/. Pattern can include plain ENV vars.
-        allow-empty: false
+    # FIXME: coverage
+    #- archive:
+    #-   artifacts: "$BUILD_DIR/**/*,config/**/*"
+    #-   description: One instance allowed. Moves the files to builds/BUILD_NUMBER/archive/. Pattern can include plain ENV vars.
+    #-   allow-empty: false
 
     # Remove entire workspace dir after building
     - conditional-publisher:
         - condition-kind: shell
           condition-command: |
-            . $scriptpath/lib/main.sh
-            trueish "$Build_Skip_Workspace_Delete" \
-              && {{ note "Skipping Workspace delete"; exit 1; }} \
+            test "$Build_Skip_Workspace_Delete" = "true" \
+              && {{ echo "Skipping Workspace delete"; exit 1; }} \
               || exit 0
           action:
             - raw:
