@@ -1,5 +1,6 @@
 
 
+
 - project:
     name: jjb
 
@@ -23,6 +24,7 @@
         <code>.jjb.yml</code>.
       </p>
 
+
     parameters:
     - bool:
         name: Build_Skip_Workspace_Delete
@@ -34,6 +36,7 @@
         name: DEBUG
         description: Be more verbose on stdout/stderr.
         default: false
+
 
     logrotate:
       daysToKeep: -1
