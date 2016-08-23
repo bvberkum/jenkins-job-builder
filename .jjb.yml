@@ -152,7 +152,7 @@
             <low>XXX</low>
             <ignoreCase>false</ignoreCase>
             <asRegexp>false</asRegexp>
-            <pattern>*.{cfg,py,rst,ini},{jenkins_jobs,tests,tools}/**</pattern>
+            <pattern>*.cfg,*py,*.rst,*.ini,jenkins_jobs/**,tests/**,tools/**</pattern>
             <excludePattern/>
           </hudson.plugins.tasks.TasksPublisher>
 
