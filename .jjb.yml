@@ -1,6 +1,4 @@
 
-# Config without using any reusable features, JJB YAML all enclosed here.
-
 
 - project:
     name: jjb
@@ -19,7 +17,7 @@
     display-name: 'Jenkins Job Builder [openstack]'
     description: |
       <p>OpenStack's Jenkins Job Builder [JJB], test run and coverage report 
-      (requires shiningpanda plugin).<p>
+      (requires shiningpanda plugin).</p> 
       <p>
         Part of <code class="muted">dotmpe/jenkins-job-builder</code>,
         <code>.jjb.yml</code>.
@@ -53,14 +51,11 @@
         skip-tag: true
         credentials-id: 'jenkins-ssh-user-key-credentials'
         #credentials-id: '{credentials-id}'
-        #browser: githubweb
-        #browser-url: '{git-browser-url}'
         branches:
         - 'origin/original'
 
     builders:
     - shell: tox -e cover
-    #- shell: coverage html
 
     wrappers:
     - timestamps
@@ -80,13 +75,9 @@
             <addColumns>false</addColumns>
           </org.jenkinsci.plugins.environmentdashboard.DashboardBuilder>
 
+
     publishers:
 
-    # detect errors and warnings and adjust build result accordingly
-    #- logparser:
-    #    parse-rules: '/var/lib/jenkins/log-rules.txt'
-    #    unstable-on-warning: true
-    #    fail-on-error: true
 
     # don't send (OpenStack) committers mail
     - email:
@@ -129,6 +120,7 @@
             <isWarningsDeactivated>false</isWarningsDeactivated>
           </hudson.plugins.analysis.collector.AnalysisPublisher>
 
+
     # Scan for embedded issues
     - raw:
         xml:
@@ -164,23 +156,19 @@
             <excludePattern/>
           </hudson.plugins.tasks.TasksPublisher>
 
+
     # Publish a nice HTML covarage report for this Python project
     - raw:
         xml:
           <jenkins.plugins.shiningpanda.publishers.CoveragePublisher plugin="shiningpanda@0.22"/>
 
-    # FIXME: coverage
-    #- archive:
-    #-   artifacts: "$BUILD_DIR/**/*,config/**/*"
-    #-   description: One instance allowed. Moves the files to builds/BUILD_NUMBER/archive/. Pattern can include plain ENV vars.
-    #-   allow-empty: false
 
     # Remove entire workspace dir after building
     - conditional-publisher:
         - condition-kind: shell
           condition-command: |
             test "$Build_Skip_Workspace_Delete" = "true" \
-              && {{ echo "Skipping Workspace delete"; exit 1; }} \
+              && { echo "Skipping Workspace delete"; exit 1; } \
               || exit 0
           action:
             - raw:
