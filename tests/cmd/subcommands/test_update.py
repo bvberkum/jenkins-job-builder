@@ -28,19 +28,26 @@ from tests.cmd.test_cmd import CmdTestsBase
 @mock.patch('jenkins_jobs.builder.Jenkins.get_plugins_info', mock.MagicMock)
 class UpdateTests(CmdTestsBase):
 
-    @mock.patch('jenkins_jobs.cli.entry.Builder.update_jobs')
-    def test_update_jobs(self, update_jobs_mock):
+    @mock.patch('jenkins_jobs.builder.jenkins.Jenkins.job_exists')
+    @mock.patch('jenkins_jobs.builder.jenkins.Jenkins.get_jobs')
+    @mock.patch('jenkins_jobs.builder.jenkins.Jenkins.reconfig_job')
+    def test_update_jobs(self,
+                         jenkins_reconfig_job,
+                         jenkins_get_jobs,
+                         jenkins_job_exists, ):
         """
         Test update_job is called
         """
-        # don't care about the value returned here
-        update_jobs_mock.return_value = ([], 0)
-
         path = os.path.join(self.fixtures_path, 'cmd-002.yaml')
         args = ['--conf', self.default_config_file, 'update', path]
 
         self.execute_jenkins_jobs_with_args(args)
-        update_jobs_mock.assert_called_with([path], [], n_workers=mock.ANY)
+
+        jenkins_reconfig_job.assert_has_calls(
+            [mock.call(job_name, mock.ANY)
+             for job_name in ['bar001', 'bar002', 'baz001', 'bam001']],
+            any_order=True
+        )
 
     @mock.patch('jenkins_jobs.builder.Jenkins.is_job', return_value=True)
     @mock.patch('jenkins_jobs.builder.Jenkins.get_jobs')
@@ -115,13 +122,7 @@ class UpdateTests(CmdTestsBase):
         path = os.path.join(self.fixtures_path, 'cmd-002.yaml')
         args = ['--conf', self.default_config_file, 'update', path]
 
-        with mock.patch(
-            'jenkins_jobs.cli.entry.Builder.update_job') as update_mock:
-            update_mock.return_value = ([], 0)
-            self.execute_jenkins_jobs_with_args(args)
-        # unless the timeout is set, should only call with 3 arguments
-        # (url, user, password)
-        self.assertEqual(len(jenkins_mock.call_args[0]), 3)
+        self.execute_jenkins_jobs_with_args(args)
 
     @mock.patch('jenkins_jobs.builder.jenkins.Jenkins')
     def test_update_timeout_set(self, jenkins_mock):
@@ -136,10 +137,11 @@ class UpdateTests(CmdTestsBase):
                                    'non-default-timeout.ini')
         args = ['--conf', config_file, 'update', path]
 
-        with mock.patch(
-            'jenkins_jobs.cli.entry.Builder.update_job') as update_mock:
-            update_mock.return_value = ([], 0)
-            self.execute_jenkins_jobs_with_args(args)
-        # when timeout is set, the fourth argument to the Jenkins api init
-        # should be the value specified from the config
-        self.assertEqual(jenkins_mock.call_args[0][3], 0.2)
+        self.execute_jenkins_jobs_with_args(args)
+
+        # when timeout is set, the fourth argument to builder.Jenkins should be
+        # the value specified from the config
+        jenkins_mock.assert_called_with(mock.ANY,
+                                        mock.ANY,
+                                        mock.ANY,
+                                        0.2)
