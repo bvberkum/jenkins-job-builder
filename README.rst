@@ -9,7 +9,7 @@ master
   - Contains taskscanner, buildaliassetter plugin additions.
     But not tested yet.
 
-f_pipeline_ci
+f_pipeline_dsl
   - The only one that passes test currently.
 
 dotmpe
