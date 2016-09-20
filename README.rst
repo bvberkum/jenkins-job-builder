@@ -9,6 +9,9 @@ master
   - Contains taskscanner, buildaliassetter plugin additions.
     But not tested yet.
 
+f_pipeline_ci
+  - The only one that passes test currently.
+
 dotmpe
   - Work in progress on DSL pipeline, workflow project.
 
