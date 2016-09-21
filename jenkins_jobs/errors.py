@@ -20,6 +20,8 @@ class ModuleError(JenkinsJobsException):
         co_name = frame.f_code.co_name
         module_name = '<unresolved>'
         while frame and co_name != 'run':
+            co_name = frame.f_code.co_name
+
             # XML generation called via dispatch
             if co_name == 'dispatch':
                 data = frame.f_locals
@@ -31,7 +33,6 @@ class ModuleError(JenkinsJobsException):
                 module_name = next(iter(data.keys()))
                 break
             frame = frame.f_back
-            co_name = frame.f_code.co_name
 
         return module_name
 

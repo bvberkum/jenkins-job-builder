@@ -11,11 +11,9 @@ default:
 	@echo "make [ $(subst $(SPACE), | ,$(T)) ]"
 
 install::
-	sudo python setup.py install
+	pip install -r requirements.txt -e .
 
 uninstall::
-	sudo pip uninstall -y jenkins-job-builder
-	pip uninstall -y jenkins-job-builder || printf ""
-	pip uninstall -y jenkins-job-builder || printf ""
+	pip uninstall -y jenkins-job-builder
 
 reinstall:: uninstall install
