@@ -79,7 +79,7 @@ class DSL(jenkins_jobs.modules.base.Base):
     component_type = 'dsl'
     component_list_type = 'dsl'
 
-    def gen_xml(self, parser, xml_parent, data):
+    def gen_xml(self, xml_parent, data):
 
         if not 'dsl' in data:
             return
@@ -112,7 +112,7 @@ class DSL(jenkins_jobs.modules.base.Base):
 
             scms_parent = XML.Element('scms')
             for scm in dsl.get('scm', []):
-                self.registry.dispatch('scm', parser, scms_parent, scm)
+                self.registry.dispatch('scm', scms_parent, scm)
             scms_count = len(scms_parent)
             if scms_count == 0:
                 XML.SubElement(xml_definition, 'scm', {'class': 'hudson.scm.NullSCM'})
