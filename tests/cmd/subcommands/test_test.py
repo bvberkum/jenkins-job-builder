@@ -35,7 +35,8 @@ from tests.base import mock
 from tests.cmd.test_cmd import CmdTestsBase
 
 
-@mock.patch('jenkins_jobs.builder.Jenkins.get_plugins_info', mock.MagicMock)
+@mock.patch('jenkins_jobs.builder.JenkinsManager.get_plugins_info',
+            mock.MagicMock)
 class TestTests(CmdTestsBase):
 
     def test_non_existing_job(self):
@@ -130,8 +131,9 @@ class TestTests(CmdTestsBase):
                     e = self.assertRaises(UnicodeError, jenkins_jobs.execute)
         self.assertIn("'ascii' codec can't encode character", str(e))
 
-    @mock.patch('jenkins_jobs.builder.YamlParser.generateXML')
-    @mock.patch('jenkins_jobs.parser.ModuleRegistry')
+    @mock.patch(
+        'jenkins_jobs.cli.subcommand.update.XmlJobGenerator.generateXML')
+    @mock.patch('jenkins_jobs.cli.subcommand.update.ModuleRegistry')
     def test_plugins_info_stub_option(self, registry_mock, generateXML_mock):
         """
         Test handling of plugins_info stub option.
@@ -154,8 +156,9 @@ class TestTests(CmdTestsBase):
         registry_mock.assert_called_with(mock.ANY,
                                          plugins_info_list)
 
-    @mock.patch('jenkins_jobs.builder.YamlParser.generateXML')
-    @mock.patch('jenkins_jobs.parser.ModuleRegistry')
+    @mock.patch(
+        'jenkins_jobs.cli.subcommand.update.XmlJobGenerator.generateXML')
+    @mock.patch('jenkins_jobs.cli.subcommand.update.ModuleRegistry')
     def test_bogus_plugins_info_stub_option(self, registry_mock,
                                             generateXML_mock):
         """
@@ -181,7 +184,7 @@ class TestTests(CmdTestsBase):
 class TestJenkinsGetPluginInfoError(CmdTestsBase):
     """ This test class is used for testing the 'test' subcommand when we want
     to validate its behavior without mocking
-    jenkins_jobs.builder.Jenkins.get_plugins_info
+    jenkins_jobs.builder.JenkinsManager.get_plugins_info
     """
 
     @mock.patch('jenkins.Jenkins.get_plugins_info')
@@ -302,7 +305,8 @@ class MatchesDir(object):
         return None
 
 
-@mock.patch('jenkins_jobs.builder.Jenkins.get_plugins_info', mock.MagicMock)
+@mock.patch('jenkins_jobs.builder.JenkinsManager.get_plugins_info',
+            mock.MagicMock)
 class TestTestsMultiPath(CmdTestsBase):
 
     def setUp(self):

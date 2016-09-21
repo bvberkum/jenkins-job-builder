@@ -21,6 +21,7 @@ import logging
 import os
 
 from six.moves import configparser, StringIO
+from six import PY2
 
 from jenkins_jobs import builder
 from jenkins_jobs.errors import JJBConfigException
@@ -49,6 +50,9 @@ query_plugins_info=True
 authtoken=dummy
 send-as=Jenkins
 """
+
+CONFIG_REQUIRED_MESSAGE = ("A valid configuration file is required. "
+                           "No configuration file passed.")
 
 
 class JJBConfig(object):
@@ -90,8 +94,7 @@ class JJBConfig(object):
         conf = None
         if config_filename is not None:
             conf = config_filename
-
-        elif config_file_required:
+        else:
             if os.path.isfile(local_conf):
                 conf = local_conf
             elif os.path.isfile(user_conf):
@@ -99,19 +102,25 @@ class JJBConfig(object):
             else:
                 conf = global_conf
 
+        if config_file_required and conf is None:
+            raise JJBConfigException(CONFIG_REQUIRED_MESSAGE)
+
         config_fp = None
         if conf is not None:
             try:
                 config_fp = self._read_config_file(conf)
-            except JJBConfigException as e:
+            except JJBConfigException:
                 if config_file_required:
-                    raise e
+                    raise JJBConfigException(CONFIG_REQUIRED_MESSAGE)
                 else:
                     logger.warn("Config file, {0}, not found. Using default "
                                 "config values.".format(conf))
 
         if config_fp is not None:
-            config_parser.readfp(config_fp)
+            if PY2:
+                config_parser.readfp(config_fp)
+            else:
+                config_parser.read_file(config_fp)
 
         self.config_parser = config_parser
 
@@ -135,7 +144,10 @@ class JJBConfig(object):
         """
         config = configparser.ConfigParser()
         # Load default config always
-        config.readfp(StringIO(DEFAULT_CONF))
+        if PY2:
+            config.readfp(StringIO(DEFAULT_CONF))
+        else:
+            config.read_file(StringIO(DEFAULT_CONF))
         return config
 
     def _read_config_file(self, config_filename):
@@ -147,8 +159,9 @@ class JJBConfig(object):
             logger.debug("Reading config from {0}".format(config_filename))
             config_fp = io.open(config_filename, 'r', encoding='utf-8')
         else:
-            raise JJBConfigException("""A valid configuration file is required.
-                \n{0} is not valid.""".format(config_filename))
+            raise JJBConfigException(
+                "A valid configuration file is required. "
+                "\n{0} is not valid.".format(config_filename))
 
         return config_fp
 
@@ -159,10 +172,10 @@ class JJBConfig(object):
 
         # check the ignore_cache setting
         if config.has_option('jenkins', 'ignore_cache'):
-            logging.warn('''ignore_cache option should be moved to the
-                          [job_builder] section in the config file, the one
-                          specified in the [jenkins] section will be ignored in
-                          the future''')
+            logging.warn("ignore_cache option should be moved to the "
+                         "[job_builder] section in the config file, the "
+                         "one specified in the [jenkins] section will be "
+                         "ignored in the future")
             self.ignore_cache = config.getboolean('jenkins', 'ignore_cache')
         elif config.has_option('job_builder', 'ignore_cache'):
             self.ignore_cache = config.getboolean('job_builder',
