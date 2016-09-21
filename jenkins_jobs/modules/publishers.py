@@ -6445,7 +6445,7 @@ class Publishers(jenkins_jobs.modules.base.Base):
         publishers = XML.SubElement(xml_parent, 'publishers')
 
         for action in data.get('publishers', []):
-            self.registry.dispatch('publisher', parser, publishers, action)
+            self.registry.dispatch('publisher', publishers, action)
 
 
 def task_scanner(parser, xml_parent, data):
