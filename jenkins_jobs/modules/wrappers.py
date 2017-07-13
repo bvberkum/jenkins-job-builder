@@ -918,10 +918,11 @@ def inject(registry, xml_parent, data):
     Add or override environment variables to the whole build process
     Requires the Jenkins :jenkins-wiki:`EnvInject Plugin <EnvInject+Plugin>`.
 
-    :arg str properties-file: path to the properties file (default '')
-    :arg str properties-content: key value pair of properties (default '')
-    :arg str script-file: path to the script file (default '')
-    :arg str script-content: contents of a script (default '')
+    :arg str properties-file: path to the properties file (optional)
+    :arg str properties-content: key value pair of properties (optional)
+    :arg str script-file: path to the script file (optional)
+    :arg str script-content: contents of a script (optional)
+    :arg bool load-from-master: load files from master (default false)
 
     Example::
 
@@ -934,15 +935,14 @@ def inject(registry, xml_parent, data):
     """
     eib = XML.SubElement(xml_parent, 'EnvInjectBuildWrapper')
     info = XML.SubElement(eib, 'info')
-    jenkins_jobs.modules.base.add_nonblank_xml_subelement(
-        info, 'propertiesFilePath', data.get('properties-file'))
-    jenkins_jobs.modules.base.add_nonblank_xml_subelement(
-        info, 'propertiesContent', data.get('properties-content'))
-    jenkins_jobs.modules.base.add_nonblank_xml_subelement(
-        info, 'scriptFilePath', data.get('script-file'))
-    jenkins_jobs.modules.base.add_nonblank_xml_subelement(
-        info, 'scriptContent', data.get('script-content'))
-    XML.SubElement(info, 'loadFilesFromMaster').text = 'false'
+    mapping = [
+        ('properties-file', 'propertiesFilePath', None),
+        ('properties-content', 'propertiesContent', None),
+        ('script-file', 'scriptFilePath', None),
+        ('script-content', 'scriptContent', None),
+        ('load-from-master', 'loadFilesFromMaster', False),
+    ]
+    convert_mapping_to_xml(info, data, mapping, fail_required=False)
 
 
 def inject_ownership_variables(registry, xml_parent, data):
@@ -975,7 +975,7 @@ def inject_passwords(registry, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`EnvInject Plugin <EnvInject+Plugin>`.
 
     :arg bool global: inject global passwords to the job
-    :arg bool mask-password-params: mask passsword parameters
+    :arg bool mask-password-params: mask password parameters
     :arg list job-passwords: key value pair of job passwords
 
         :Parameter: * **name** (`str`) Name of password
@@ -1006,7 +1006,7 @@ def env_file(registry, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`Environment File Plugin
     <Envfile+Plugin>`.
 
-    :arg str properties-file: path to the properties file (default '')
+    :arg str properties-file: path to the properties file (optional)
 
     Example::
 
@@ -1016,8 +1016,10 @@ def env_file(registry, xml_parent, data):
     """
     eib = XML.SubElement(xml_parent,
                          'hudson.plugins.envfile.EnvFileBuildWrapper')
-    jenkins_jobs.modules.base.add_nonblank_xml_subelement(
-        eib, 'filePath', data.get('properties-file'))
+    mapping = [
+        ('properties-file', 'filePath', None),
+    ]
+    convert_mapping_to_xml(eib, data, mapping, fail_required=False)
 
 
 def env_script(registry, xml_parent, data):
@@ -1333,6 +1335,34 @@ def sauce_ondemand(registry, xml_parent, data):
     XML.SubElement(sauce, 'options').text = options
 
 
+def sonar(registry, xml_parent, data):
+    """yaml: sonar
+    Wrapper for SonarQube Plugin
+    Requires :jenkins-wiki:`SonarQube plugin <SonarQube+plugin>`
+
+    :arg str install-name: Release goals and options (default '')
+
+    Minimal Example:
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/sonar-minimal.yaml
+       :language: yaml
+
+    Full Example:
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/sonar-full.yaml
+       :language: yaml
+    """
+    sonar = XML.SubElement(
+        xml_parent, 'hudson.plugins.sonar.SonarBuildWrapper')
+    sonar.set('plugin', 'sonar')
+
+    if data.get('install-name'):
+        mapping = [
+            ('install-name', 'installationName', ''),
+        ]
+        convert_mapping_to_xml(sonar, data, mapping, fail_required=True)
+
+
 def pathignore(registry, xml_parent, data):
     """yaml: pathignore
     This plugin allows SCM-triggered jobs to ignore
@@ -1374,33 +1404,34 @@ def pre_scm_buildstep(registry, xml_parent, data):
     Execute a Build Step before running the SCM
     Requires the Jenkins :jenkins-wiki:`pre-scm-buildstep <pre-scm-buildstep>`.
 
+    :arg string failOnError: Specifies if the job should fail on error
+        (plugin >= 0.3) (default false).
     :arg list buildsteps: List of build steps to execute
 
         :Buildstep: Any acceptable builder, as seen in the example
 
-    Example::
+    Example:
 
-      wrappers:
-        - pre-scm-buildstep:
-          - shell: |
-              #!/bin/bash
-              echo "Doing somethiung cool"
-          - shell: |
-              #!/bin/zsh
-              echo "Doing somethin cool with zsh"
-          - ant: "target1 target2"
-            ant-name: "Standard Ant"
-          - inject:
-               properties-file: example.prop
-               properties-content: EXAMPLE=foo-bar
+    .. literalinclude::
+       /../../tests/wrappers/fixtures/pre-scm-buildstep001.yaml
+       :language: yaml
     """
+    # Get plugin information to maintain backwards compatibility
+    info = registry.get_plugin_info('preSCMbuildstep')
+    version = pkg_resources.parse_version(info.get('version', "0"))
+
     bsp = XML.SubElement(xml_parent,
                          'org.jenkinsci.plugins.preSCMbuildstep.'
                          'PreSCMBuildStepsWrapper')
     bs = XML.SubElement(bsp, 'buildSteps')
-    for step in data:
+    stepList = data if type(data) is list else data.get('buildsteps')
+
+    for step in stepList:
         for edited_node in create_builders(registry, step):
             bs.append(edited_node)
+    if version >= pkg_resources.parse_version("0.3"):
+        XML.SubElement(bsp, 'failOnError').text = str(data.get(
+            'failOnError', False)).lower()
 
 
 def logstash(registry, xml_parent, data):
@@ -1870,60 +1901,55 @@ def xvfb(registry, xml_parent, data):
     Enable xvfb during the build.
     Requires the Jenkins :jenkins-wiki:`Xvfb Plugin <Xvfb+Plugin>`.
 
-    :arg str installation-name: The name of the Xvfb tool instalation
-                                (default default)
+    :arg str installation-name: The name of the Xvfb tool instalation (default
+        'default')
     :arg bool auto-display-name: Uses the -displayfd option of Xvfb by which it
-                                 chooses it's own display name
-                                 (default false)
+        chooses it's own display name (default false)
     :arg str display-name: Ordinal of the display Xvfb will be running on, if
-                           left empty choosen based on current build executor
-                           number (optional)
+        left empty choosen based on current build executor number (default '')
     :arg str assigned-labels: If you want to start Xvfb only on specific nodes
-                              specify its name or label (optional)
+        specify its name or label (default '')
     :arg bool parallel-build: When running multiple Jenkins nodes on the same
-                              machine this setting influences the display
-                              number generation (default false)
+        machine this setting influences the display number generation (default
+        false)
     :arg int timeout: A timeout of given seconds to wait before returning
-                      control to the job (default 0)
-    :arg str screen: Resolution and color depth. (default 1024x768x24)
-    :arg str display-name-offset: Offset for display names. (default 1)
+        control to the job (default 0)
+    :arg str screen: Resolution and color depth. (default '1024x768x24')
+    :arg int display-name-offset: Offset for display names. (default 1)
     :arg str additional-options: Additional options to be added with the
-                                 options above to the Xvfb command line
-                                 (optional)
+        options above to the Xvfb command line (default '')
     :arg bool debug: If Xvfb output should appear in console log of this job
-                     (default false)
+        (default false)
     :arg bool shutdown-with-build: Should the display be kept until the whole
-                                   job ends (default false)
+        job ends (default false)
 
-    Example:
+    Full Example:
 
-    .. literalinclude:: /../../tests/wrappers/fixtures/xvfb001.yaml
+    .. literalinclude:: /../../tests/wrappers/fixtures/xvfb-full.yaml
+       :language: yaml
 
+    Minimal Example:
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/xvfb-minimal.yaml
+       :language: yaml
     """
     xwrapper = XML.SubElement(xml_parent,
                               'org.jenkinsci.plugins.xvfb.XvfbBuildWrapper')
-    XML.SubElement(xwrapper, 'installationName').text = str(data.get(
-        'installation-name', 'default'))
-    XML.SubElement(xwrapper, 'autoDisplayName').text = str(data.get(
-        'auto-display-name', False)).lower()
-    if 'display-name' in data:
-        XML.SubElement(xwrapper, 'displayName').text = str(data.get(
-            'display-name', ''))
-    XML.SubElement(xwrapper, 'assignedLabels').text = str(data.get(
-        'assigned-labels', ''))
-    XML.SubElement(xwrapper, 'parallelBuild').text = str(data.get(
-        'parallel-build', False)).lower()
-    XML.SubElement(xwrapper, 'timeout').text = str(data.get('timeout', '0'))
-    XML.SubElement(xwrapper, 'screen').text = str(data.get(
-        'screen', '1024x768x24'))
-    XML.SubElement(xwrapper, 'displayNameOffset').text = str(data.get(
-        'display-name-offset', '1'))
-    XML.SubElement(xwrapper, 'additionalOptions').text = str(data.get(
-        'additional-options', ''))
-    XML.SubElement(xwrapper, 'debug').text = str(data.get(
-        'debug', False)).lower()
-    XML.SubElement(xwrapper, 'shutdownWithBuild').text = str(data.get(
-        'shutdown-with-build', False)).lower()
+
+    mapping = [
+        ('installation-name', 'installationName', 'default'),
+        ('auto-display-name', 'autoDisplayName', False),
+        ('display-name', 'displayName', ''),
+        ('assigned-labels', 'assignedLabels', ''),
+        ('parallel-build', 'parallelBuild', False),
+        ('timeout', 'timeout', 0),
+        ('screen', 'screen', '1024x768x24'),
+        ('display-name-offset', 'displayNameOffset', 1),
+        ('additional-options', 'additionalOptions', ''),
+        ('debug', 'debug', False),
+        ('shutdown-with-build', 'shutdownWithBuild', False),
+    ]
+    convert_mapping_to_xml(xwrapper, data, mapping, fail_required=True)
 
 
 def android_emulator(registry, xml_parent, data):
@@ -2362,6 +2388,59 @@ def buildaliassetter(parser, xml_parent, data):
                 'org.jenkinsci.plugins.buildaliassetter.TokenMacroAliasProvider')
         template = XML.SubElement(TokenMacroAliasProvider, 'template')
         template.text = str(alias)
+
+
+def version_number(parser, xml_parent, data):
+    """yaml: version-number
+    Generate a version number for the build using a format string. See the
+    wiki page for more detailed descriptions of options.
+
+    Requires the Jenkins :jenkins-wiki:`version number plugin
+    <Version+Number+Plugin>`.
+
+    :arg str variable-name: Name of environment variable to assign version
+        number to (required)
+    :arg str format-string: Format string used to generate version number
+        (required)
+    :arg bool skip-failed-builds: If the build fails, DO NOT increment any
+        auto-incrementing component of the version number (default: false)
+    :arg bool display-name: Use the version number for the build display
+        name (default: false)
+    :arg str start-date: The date the project began as a UTC timestamp
+        (default 1970-1-1 00:00:00.0 UTC)
+    :arg int builds-today: The number of builds that have been executed
+        today (optional)
+    :arg int builds-this-month: The number of builds that have been executed
+        since the start of the month (optional)
+    :arg int builds-this-year: The number of builds that have been executed
+        since the start of the year (optional)
+    :arg int builds-all-time: The number of builds that have been executed
+        since the start of the project (optional)
+
+    Example:
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/version-number001.yaml
+       :language: yaml
+
+    """
+    version_number = XML.SubElement(
+        xml_parent, 'org.jvnet.hudson.tools.versionnumber.VersionNumberBuilder'
+    )
+
+    mapping = [
+        # option, xml name, default value
+        ("variable-name", 'environmentVariableName', None),
+        ("format-string", 'versionNumberString', None),
+        ("skip-failed-builds", 'skipFailedBuilds', False),
+        ("display-name", 'useAsBuildDisplayName', False),
+        ("start-date", 'projectStartDate', '1970-1-1 00:00:00.0 UTC'),
+        ("builds-today", 'oBuildsToday', '-1'),
+        ("builds-this-month", 'oBuildsThisMonth', '-1'),
+        ("builds-this-year", 'oBuildsThisYear', '-1'),
+        ("builds-all-time", 'oBuildsAllTime', '-1'),
+    ]
+
+    convert_mapping_to_xml(version_number, data, mapping, fail_required=True)
 
 
 class Wrappers(jenkins_jobs.modules.base.Base):

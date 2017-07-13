@@ -19,6 +19,7 @@ import codecs
 import fnmatch
 import locale
 import os.path
+from six.moves import input
 
 
 def wrap_stream(stream, encoding='utf-8'):
@@ -66,4 +67,4 @@ def recurse_path(root, excludes=None):
 
 def confirm(question):
     answer = input('%s (Y/N): ' % question).upper().strip()
-    return not answer == 'Y'
+    return answer == 'Y'

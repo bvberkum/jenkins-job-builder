@@ -170,6 +170,8 @@ def git(registry, xml_parent, data):
         * **scm-name** (`string`) - The unique scm name for this Git SCM
             (optional)
         * **shallow-clone** (`bool`) - Perform shallow clone (default false)
+        * **do-not-fetch-tags** (`bool`) - Perform a clone without tags
+            (default false)
         * **sparse-checkout** (`dict`)
             * **paths** (`list`) - List of paths to sparse checkout. (optional)
         * **submodule** (`dict`)
@@ -181,6 +183,8 @@ def git(registry, xml_parent, data):
             * **tracking** (`bool`) - Retrieve the tip of the configured
               branch in .gitmodules (Uses '\-\-remote' option which requires
               git>=1.8.2)
+            * **parent-credentials** (`bool`) - Use credentials from default
+              remote of parent repository (default false).
             * **reference-repo** (`str`) - Path of the reference repo to use
               during clone (optional)
             * **timeout** (`int`) - Specify a timeout (in minutes) for
@@ -371,10 +375,18 @@ def git(registry, xml_parent, data):
     if 'scm-name' in data:
         ext = XML.SubElement(exts_node, impl_prefix + 'ScmName')
         XML.SubElement(ext, 'name').text = str(data['scm-name'])
-    if 'shallow-clone' in data or 'timeout' in data:
+    clone_options = (
+        "shallow-clone",
+        "timeout",
+        "do-not-fetch-tags"
+    )
+    if any(key in data for key in clone_options):
         clo = XML.SubElement(exts_node, impl_prefix + 'CloneOption')
         XML.SubElement(clo, 'shallow').text = str(
             data.get('shallow-clone', False)).lower()
+        if 'do-not-fetch-tags' in data:
+            XML.SubElement(clo, 'noTags').text = str(
+                data.get('do-not-fetch-tags', False)).lower()
         if 'timeout' in data:
             XML.SubElement(clo, 'timeout').text = str(data['timeout'])
     if 'sparse-checkout' in data:
@@ -396,6 +408,8 @@ def git(registry, xml_parent, data):
             data['submodule'].get('recursive', False)).lower()
         XML.SubElement(ext, 'trackingSubmodules').text = str(
             data['submodule'].get('tracking', False)).lower()
+        XML.SubElement(ext, 'parentCredentials').text = str(
+            data['submodule'].get('parent-credentials', False)).lower()
         XML.SubElement(ext, 'reference').text = str(
             data['submodule'].get('reference-repo', ''))
         XML.SubElement(ext, 'timeout').text = str(
@@ -596,16 +610,14 @@ def cvs(registry, xml_parent, data):
             raise InvalidAttributeError('compression-level',
                                         compression_level, range(-1, 10))
         XML.SubElement(repo_tag, 'compressionLevel').text = compression_level
-    mapping = [('use-update', 'canUseUpdate', True),
-               ('prune-empty', 'pruneEmptyDirectories', True),
-               ('skip-changelog', 'skipChangeLog', False),
-               ('show-all-output', 'disableCvsQuiet', False),
-               ('clean-checkout', 'cleanOnFailedUpdate', False),
-               ('clean-copy', 'forceCleanCopy', False)]
-    for elem in mapping:
-        opt, xml_tag, val = elem[:]
-        XML.SubElement(cvs, xml_tag).text = str(
-            data.get(opt, val)).lower()
+    mappings = [
+        ('use-update', 'canUseUpdate', True),
+        ('prune-empty', 'pruneEmptyDirectories', True),
+        ('skip-changelog', 'skipChangeLog', False),
+        ('show-all-output', 'disableCvsQuiet', False),
+        ('clean-checkout', 'cleanOnFailedUpdate', False),
+        ('clean-copy', 'forceCleanCopy', False)]
+    convert_mapping_to_xml(cvs, data, mappings, fail_required=True)
 
 
 def repo(registry, xml_parent, data):
@@ -614,18 +626,18 @@ def repo(registry, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`Repo Plugin <Repo+Plugin>`.
 
     :arg str manifest-url: URL of the repo manifest (required)
-    :arg str manifest-branch: The branch of the manifest to use (default '')
+    :arg str manifest-branch: The branch of the manifest to use (optional)
     :arg str manifest-file: Initial manifest file to use when initialising
-        (default '')
+        (optional)
     :arg str manifest-group: Only retrieve those projects in the manifest
-        tagged with the provided group name (default '')
+        tagged with the provided group name (optional)
     :arg list(str) ignore-projects: a list of projects in which changes would
-        not be considered to trigger a build when pooling (default '')
+        not be considered to trigger a build when pooling (optional)
     :arg str destination-dir: Location relative to the workspace root to clone
-        under (default '')
-    :arg str repo-url: custom url to retrieve the repo application (default '')
+        under (optional)
+    :arg str repo-url: custom url to retrieve the repo application (optional)
     :arg str mirror-dir: Path to mirror directory to reference when
-        initialising (default '')
+        initialising (optional)
     :arg int jobs: Number of projects to fetch simultaneously (default 0)
     :arg int depth: Specify the depth in history to sync from the source. The
         default is to sync all of the history. Use 1 to just sync the most
@@ -645,7 +657,7 @@ def repo(registry, xml_parent, data):
     :arg bool show-all-changes: When this is checked --first-parent is no
         longer passed to git log when determining changesets (default false)
     :arg str local-manifest: Contents of .repo/local_manifest.xml, written
-        prior to calling sync (default '')
+        prior to calling sync (optional)
 
     Example:
 
@@ -658,12 +670,6 @@ def repo(registry, xml_parent, data):
     mapping = [
         # option, xml name, default value
         ('manifest-url', 'manifestRepositoryUrl', None),
-        ('manifest-branch', 'manifestBranch', ''),
-        ('manifest-file', 'manifestFile', ''),
-        ('manifest-group', 'manifestGroup', ''),
-        ('destination-dir', 'destinationDir', ''),
-        ('repo-url', 'repoUrl', ''),
-        ('mirror-dir', 'mirrorDir', ''),
         ('jobs', 'jobs', 0),
         ('depth', 'depth', 0),
         ('current-branch', 'currentBranch', True),
@@ -673,9 +679,20 @@ def repo(registry, xml_parent, data):
         ('no-tags', 'noTags', False),
         ('trace', 'trace', False),
         ('show-all-changes', 'showAllChanges', False),
-        ('local-manifest', 'localManifest', ''),
     ]
     convert_mapping_to_xml(scm, data, mapping, fail_required=True)
+
+    optional_mapping = [
+        # option, xml name, default value
+        ('manifest-branch', 'manifestBranch', None),
+        ('manifest-file', 'manifestFile', None),
+        ('manifest-group', 'manifestGroup', None),
+        ('destination-dir', 'destinationDir', None),
+        ('repo-url', 'repoUrl', None),
+        ('mirror-dir', 'mirrorDir', None),
+        ('local-manifest', 'localManifest', None),
+    ]
+    convert_mapping_to_xml(scm, data, optional_mapping, fail_required=False)
 
     # ignore-projects does not follow the same pattern of the other parameters,
     # so process it here:
@@ -951,7 +968,7 @@ def tfs(registry, xml_parent, data):
         data.get('local-path', '.'))
     XML.SubElement(tfs, 'workspaceName').text = str(
         data.get('workspace', 'Hudson-${JOB_NAME}-${NODE_NAME}'))
-    # TODO: In the future, with would be nice to have a place that can pull
+    # TODO: In the future, it would be nice to have a place that can pull
     # passwords into JJB without having to commit them in plaintext. This
     # could also integrate nicely with global configuration options.
     XML.SubElement(tfs, 'userPassword')
@@ -1089,7 +1106,8 @@ def hg(self, xml_parent, data):
     browser = data.get('browser', 'auto')
     browserdict = {
         'auto': '',
-        'bitbucket': 'BitBucket',
+        'bitbucket': 'BitBucket',  # deprecated
+        'bitbucketweb': 'BitBucket',
         'fisheye': 'FishEye',
         'googlecode': 'GoogleCode',
         'hgweb': 'HgWeb',
@@ -1258,6 +1276,109 @@ def url(registry, xml_parent, data):
         data.get('clear-workspace', False)).lower()
 
 
+def dimensions(registry, xml_parent, data):
+    """yaml: dimensions
+
+    Specifies the Dimensions SCM repository for this job.
+    Requires Jenkins :jenkins-wiki:`Dimensions Plugin <Dimensions+Plugin>`.
+
+    :arg str project: Project name of format PRODUCT_ID:PROJECT_NAME (required)
+    :arg str permissions: Default Permissions for updated files
+        (default: DEFAULT)
+
+        :Permissions:
+            * **DEFAULT**
+            * **READONLY**
+            * **WRITABLE**
+    :arg str eol: End of line (default: DEFAULT)
+
+        :End of line:
+            * **DEFAULT**
+            * **UNIX**
+            * **WINDOWS**
+            * **UNCHANGED**
+    :arg list folders: Folders to monitor (default /)
+    :arg list exclude: Paths to exclude from monitor
+    :arg str username: Repository username for this job
+    :arg str password: Repository password for this job
+    :arg str server: Dimensions server for this job
+    :arg str database: Dimensions database for this job.
+        Format must be database@dsn
+    :arg bool update: Use update (default false)
+    :arg bool clear-workspace: Clear workspace prior to build (default false)
+    :arg bool force-build: Force build even if the repository SCM checkout
+        operation fails (default false)
+    :arg bool overwrite-modified: Overwrite files in worspace from
+        repository files (default false)
+    :arg bool expand-vars: Expand substitution variables (default false)
+    :arg bool no-metadata: Checkout files with no metadata (default false)
+    :arg bool maintain-timestamp: Maintain file timestamp from Dimensions
+        (default false)
+    :arg bool slave-checkout: Force slave based checkout (default false)
+    :arg str timezone: Server timezone
+    :arg str web-url: Dimensions Web URL
+
+    Examples:
+
+    .. literalinclude:: /../../tests/scm/fixtures/dimensions-minimal.yaml
+       :language: yaml
+    .. literalinclude:: /../../tests/scm/fixtures/dimensions-full.yaml
+       :language: yaml
+
+    """
+
+    scm = XML.SubElement(
+        xml_parent,
+        'scm', {'class': 'hudson.plugins.dimensionsscm.DimensionsSCM'})
+
+    # List to check against for valid permission
+    perm = ['DEFAULT', 'READONLY', 'WRITABLE']
+
+    # List to check against for valid end of line
+    eol = ['DEFAULT', 'UNIX', 'WINDOWS', 'UNCHANGED']
+
+    mapping = [
+        # option, xml name, default value (text), attributes (hard coded)
+        ('project', 'project', None),
+        ('permissions', 'permissions', 'DEFAULT', perm),
+        ('eol', 'eol', 'DEFAULT', eol),
+        ('update', 'canJobUpdate', False),
+        ('clear-workspace', 'canJobDelete', False),
+        ('force-build', 'canJobForce', False),
+        ('overwrite-modified', 'canJobRevert', False),
+        ('expand-vars', 'canJobExpand', False),
+        ('no-metadata', 'canJobNoMetadata', False),
+        ('maintain-timestamp', 'canJobNoTouch', False),
+        ('slave-checkout', 'forceAsSlave', False),
+    ]
+    convert_mapping_to_xml(scm, data, mapping, fail_required=True)
+
+    # Folders to monitor. Default '/'
+    folders = XML.SubElement(scm, 'folders')
+    if 'folders' in data:
+        for folder in data['folders']:
+            XML.SubElement(folders, 'string').text = folder
+    else:
+        XML.SubElement(folders, 'string').text = '/'
+
+    # Excluded paths
+    exclude = XML.SubElement(scm, 'pathsToExclude')
+    if 'exclude' in data:
+        for exc in data['exclude']:
+            XML.SubElement(exclude, 'string').text = exc
+
+    optional_mapping = [
+        # option, xml name, default value (text), attributes (hard coded)
+        ('username', 'jobUserName', None),
+        ('password', 'jobPasswd', None),
+        ('server', 'jobServer', None),
+        ('database', 'jobDatabase', None),
+        ('timezone', 'jobTimeZone', None),
+        ('web-url', 'jobWebUrl', None),
+    ]
+    convert_mapping_to_xml(scm, data, optional_mapping, fail_required=False)
+
+
 class SCM(jenkins_jobs.modules.base.Base):
     sequence = 30
 
@@ -1286,3 +1407,27 @@ class SCM(jenkins_jobs.modules.base.Base):
                     pass
 
             xml_parent.append(scms_parent)
+
+
+class PipelineSCM(jenkins_jobs.modules.base.Base):
+    sequence = 30
+
+    component_type = 'pipeline-scm'
+    component_list_type = 'pipeline-scm'
+
+    def gen_xml(self, xml_parent, data):
+        definition_parent = xml_parent.find('definition')
+        pipeline_dict = data.get(self.component_type, {})
+        scms = pipeline_dict.get('scm')
+        if scms:
+            scms_count = len(scms)
+            if scms_count == 0:
+                raise JenkinsJobsException("'scm' missing or empty")
+            elif scms_count == 1:
+                self.registry.dispatch('scm', definition_parent, scms[0])
+                XML.SubElement(definition_parent, 'scriptPath'
+                               ).text = pipeline_dict.get('script-path',
+                                                          'Jenkinsfile')
+            else:
+                raise JenkinsJobsException('Only one SCM can be specified '
+                                           'as pipeline-scm')

@@ -14,14 +14,13 @@
 # under the License.
 
 import os
-import testtools
 
 import jenkins_jobs
-from tests.base import LoggingFixture
+from tests import base
 from tests.base import mock
 
 
-class TestCaseJobCache(LoggingFixture, testtools.TestCase):
+class TestCaseJobCache(base.BaseTestCase):
 
     @mock.patch('jenkins_jobs.builder.JobCache.get_cache_dir',
                 lambda x: '/bad/file')
@@ -32,7 +31,8 @@ class TestCaseJobCache(LoggingFixture, testtools.TestCase):
 
         with mock.patch('jenkins_jobs.builder.JobCache.save') as save_mock:
             with mock.patch('os.path.isfile', return_value=False):
-                jenkins_jobs.builder.JobCache("dummy")
+                with mock.patch('jenkins_jobs.builder.JobCache._lock'):
+                    jenkins_jobs.builder.JobCache("dummy")
             save_mock.assert_called_with()
 
     @mock.patch('jenkins_jobs.builder.JobCache.get_cache_dir',
@@ -44,4 +44,5 @@ class TestCaseJobCache(LoggingFixture, testtools.TestCase):
         test_file = os.path.abspath(__file__)
         with mock.patch('os.path.join', return_value=test_file):
             with mock.patch('yaml.load'):
-                jenkins_jobs.builder.JobCache("dummy").data = None
+                with mock.patch('jenkins_jobs.builder.JobCache._lock'):
+                    jenkins_jobs.builder.JobCache("dummy").data = None
