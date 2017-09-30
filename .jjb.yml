@@ -50,7 +50,7 @@
 
     scm:
     - git:
-        url: 'git@github.com:dotmpe/jenkins-job-builder.git'
+        url: 'git@github.com:bvberkum/jenkins-job-builder.git'
         skip-tag: true
         credentials-id: 'jenkins-ssh-user-key-credentials'
         #credentials-id: '{credentials-id}'
